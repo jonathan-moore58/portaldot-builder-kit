@@ -1,0 +1,7 @@
+{
+  "name": "data-uri-to-buffer",
+  "version": "4.0.1",
+  "license": "MIT",
+  "repository": "git://github.com/TooTallNate/node-data-uri-to-buffer.git",
+  "from": "the License section of the README.md of the npm package, which ships no licence file"
+}

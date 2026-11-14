@@ -1,0 +1,14 @@
+{
+  "name": "bridge-zero",
+  "description": "Developer tools by the Bridge Zero team",
+  "owner": { "name": "Bridge Zero team" },
+  "plugins": [
+    {
+      "name": "portaldot-dev",
+      "source": "./plugins/portaldot-dev",
+      "description": "Checked facts and read-only chain tools for building on Portaldot V3. Never asks for a key, never sends a transaction. Independent, not an official Portaldot tool.",
+      "category": "blockchain",
+      "tags": ["portaldot", "substrate", "solidity", "mcp"]
+    }
+  ]
+}

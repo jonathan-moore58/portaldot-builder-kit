@@ -1,0 +1,1193 @@
+{
+ "tools": [
+  "get_chain_facts",
+  "search_chain",
+  "describe_item",
+  "convert_address",
+  "get_account",
+  "convert_amount",
+  "read_storage",
+  "encode_call",
+  "estimate_eth_transaction",
+  "simulate_contract_call",
+  "simulate_contract_deploy",
+  "get_transaction",
+  "get_block",
+  "get_contract_events",
+  "explain_error"
+ ],
+ "calls": [
+  {
+   "tool": "get_chain_facts",
+   "args": {},
+   "includes": [
+    "Portaldot V3 testnet",
+    "420420777",
+    "14 decimals",
+    "0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+    "wss://test-node-v3.portaldot.dev",
+    "0.1 tPOT",
+    "3.8415 tPOT"
+   ]
+  },
+  {
+   "tool": "get_chain_facts",
+   "args": {
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "780780777",
+    "No public Ethereum JSON-RPC",
+    "0x6e7f1f24628d2fa3a1ac81a8b45157c63b1037fee4123a7664aae2c55cdbbc36",
+    "0.1 POT",
+    "gas price now, read through the node"
+   ],
+   "excludes": [
+    "tPOT"
+   ]
+  },
+  {
+   "tool": "get_chain_facts",
+   "args": {
+    "network": "devnet"
+   },
+   "includes": [
+    "Invalid arguments for tool get_chain_facts",
+    "network"
+   ],
+   "error": true
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "send"
+   },
+   "includes": [
+    "Balances.transferKeepAlive(dest, value)",
+    "How to"
+   ]
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "mint nft"
+   },
+   "includes": [
+    "Nfts.mint(collection, item, mintTo, witnessData)"
+   ]
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "deploy ink!"
+   },
+   "includes": [
+    "Contracts.instantiateWithCode"
+   ]
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "referendum"
+   },
+   "includes": [
+    "No module, call, event"
+   ]
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "x"
+   },
+   "error": true,
+   "note": "a query of one character is refused"
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "   "
+   },
+   "error": true,
+   "note": "a query of spaces is refused"
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+   },
+   "error": true,
+   "includes": [
+    "secret recovery phrase"
+   ],
+   "note": "a secret phrase is refused in any argument of any tool"
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "existential deposit",
+    "kinds": [
+     "constant"
+    ]
+   },
+   "includes": [
+    "Balances.existentialDeposit = 10000000000000 (0.1 tPOT)"
+   ]
+  },
+  {
+   "tool": "search_chain",
+   "args": {
+    "query": "a"
+   },
+   "includes": [
+    "Invalid arguments for tool search_chain",
+    "query"
+   ],
+   "error": true
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Balances.transferKeepAlive"
+   },
+   "includes": [
+    "module 6, call 3",
+    "0x0603",
+    "dest: MultiAddress",
+    "value: Compact<u128>",
+    "api.tx.balances.transferKeepAlive(dest, value)"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "balances::transfer_keep_alive",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "0x0603",
+    "1 POT is 1 followed by 14 zeros"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Revive"
+   },
+   "includes": [
+    "module 80",
+    "Calls (14)",
+    "Events (3)",
+    "depositPerByte = 6000000000000 (0.06 tPOT)",
+    "codeHashLockupDepositPercent = 300000000 (30%)"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Nfts.create"
+   },
+   "includes": [
+    "PalletNftsCollectionConfig: { settings: u64, maxSupply: Option<u32>, mintSettings: PalletNftsMintSettings }",
+    "PalletNftsMintType: one of Issuer | Public | HolderOf(u32)"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Balances.transfer"
+   },
+   "includes": [
+    "has no call named \"transfer\"",
+    "transferAllowDeath",
+    "transferKeepAlive"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "api.errors.assets.Frozen"
+   },
+   "includes": [
+    "an error of the Assets module"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Balances.transferKeepAlive",
+    "kind": "event"
+   },
+   "error": true,
+   "includes": [
+    "has no event named"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Democracy.vote"
+   },
+   "error": true,
+   "includes": [
+    "this chain does not have it"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Balances.ExistentialDeposit"
+   },
+   "includes": [
+    "Balances.ExistentialDeposit - an error of the Balances module"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Staking.bond"
+   },
+   "includes": [
+    "PalletStakingRewardDestination: one of Staked | Stash | Controller | Account(AccountId32) | None"
+   ]
+  },
+  {
+   "tool": "describe_item",
+   "args": {
+    "name": "Balances.nothing"
+   },
+   "includes": [
+    "has nothing named \"nothing\""
+   ],
+   "error": true
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "0x8DDEe436166f311ddeED36d714B08F512670d16e",
+    "0x6d6f646c70792f74727372790000000000000000000000000000000000000000",
+    "it is linked to its 0x address"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x8ddee436166f311ddeed36d714b08f512670d16e"
+   },
+   "includes": [
+    "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "No private key exists"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x52f2d9e3b1bb0d8cf1f4f0bc7b3a4d1b0e7c9a11"
+   },
+   "includes": [
+    "5DwTvdqfoYzcnHDMc5iuxfHxxP3CHwH9X813W3wksnwdt8Yb",
+    "its fallback account"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x6d6f646c70792f70616464720000000000000000"
+   },
+   "includes": [
+    "pallets address",
+    "not an account to pay"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x0000000200000000000000000000000000010000"
+   },
+   "includes": [
+    "ERC-20 address of asset 2 of the Assets module"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "5FGipbm9kpThCKSRuVamVt8y67H7MVqYob1gJYYqcyceoyPM"
+   },
+   "includes": [
+    "is a separate account",
+    "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   ],
+   "note": "the fallback form of a 0x address that is linked to a native account"
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+   },
+   "error": true,
+   "includes": [
+    "secret recovery phrase"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x8ddee436166f311ddeed36d714b08f512670d16g"
+   },
+   "error": true,
+   "includes": [
+    "is not hex",
+    "\"g\""
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x1234"
+   },
+   "error": true
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+   },
+   "error": true,
+   "includes": [
+    "far too long for an address"
+   ],
+   "note": "a very long input is refused at once"
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "0x00000000000000000000000000000000000000ff",
+    "network": "mainnet"
+   },
+   "includes": [
+    "precompiles",
+    "5C4hrfjw9DjXZTzV3MwzrrAr9P1UTzS88j9irHb2WyqDMYWK",
+    "not an account to pay"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "13UVJyLnbVp9RBZYFwFGyDvVd1y27Tt8tkntv6Q7JVPhFsTB"
+   },
+   "includes": [
+    "you wrote it with SS58 prefix 0; Portaldot uses prefix 42",
+    "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   ]
+  },
+  {
+   "tool": "convert_address",
+   "args": {
+    "address": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+   },
+   "includes": [
+    "secret recovery phrase"
+   ],
+   "error": true
+  },
+  {
+   "tool": "get_account",
+   "args": {
+    "address": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "modlpy/trsry",
+    "0x8DDEe436166f311ddeED36d714B08F512670d16e",
+    "One nonce serves both sides",
+    "reviveApi.balance, the node's own figure",
+    "eth_getBalance at block"
+   ]
+  },
+  {
+   "tool": "get_account",
+   "args": {
+    "address": "0x1111111111111111111111111111111111111111"
+   },
+   "includes": [
+    "the chain cannot tell these apart",
+    "<- its fallback account",
+    "5CT5jwBEAhveEjgiSCQbkaKcKcUyGT47FQKa1yyuvLR62v8j"
+   ]
+  },
+  {
+   "tool": "get_account",
+   "args": {
+    "address": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    " POT (",
+    "has no public Ethereum RPC"
+   ],
+   "excludes": [
+    "tPOT"
+   ]
+  },
+  {
+   "tool": "get_account",
+   "args": {
+    "address": "0x8ddee436166f311ddeed36d714b08f512670d16"
+   },
+   "includes": [
+    "39 characters after 0x"
+   ],
+   "error": true
+  },
+  {
+   "tool": "convert_amount",
+   "args": {
+    "amount": "1.5",
+    "unit": "token"
+   },
+   "includes": [
+    "150000000000000",
+    "1500000000000000000",
+    "0x14d1120d7b160000",
+    "10000 times too much as a native value",
+    "nothing was read from the chain"
+   ]
+  },
+  {
+   "tool": "convert_amount",
+   "args": {
+    "amount": "1234567",
+    "unit": "wei"
+   },
+   "includes": [
+    "123 base units and 4567 wei left over",
+    "called dust",
+    "not known to us"
+   ]
+  },
+  {
+   "tool": "convert_amount",
+   "args": {
+    "amount": "2",
+    "unit": "token",
+    "network": "mainnet"
+   },
+   "includes": [
+    "2 POT in all three units",
+    "200000000000000"
+   ],
+   "excludes": [
+    "tPOT"
+   ]
+  },
+  {
+   "tool": "convert_amount",
+   "args": {
+    "amount": "1e18",
+    "unit": "wei"
+   },
+   "includes": [
+    "without an exponent",
+    "1000000000000000000"
+   ],
+   "error": true
+  },
+  {
+   "tool": "read_storage",
+   "args": {
+    "item": "Revive.originalAccount",
+    "keys": [
+     "0x8ddee436166f311ddeed36d714b08f512670d16e"
+    ]
+   },
+   "includes": [
+    "\"5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z\"",
+    "Read at block",
+    "Storage key: 0x735f040a5d490f1107ad9c56f5ca00d2c56ab6c1f203b345fe5879f8196277238ddee436166f311ddeed36d714b08f512670d16e"
+   ]
+  },
+  {
+   "tool": "read_storage",
+   "args": {
+    "item": "Balances.existentialDeposit"
+   },
+   "includes": [
+    "is a constant of the Balances module",
+    "10000000000000",
+    "api.consts.balances.existentialDeposit"
+   ]
+  },
+  {
+   "tool": "read_storage",
+   "args": {
+    "item": "Assets.asset",
+    "limit": 2
+   },
+   "includes": [
+    "A listing of the map's entries: 1 key in all (u32)",
+    "\"start_key\": \"0x682a59d51ab9e48a8c8cc418ff9708d2d34371a193a751eea5883e9553457b2e"
+   ]
+  },
+  {
+   "tool": "read_storage",
+   "args": {
+    "item": "Balances.acount"
+   },
+   "includes": [
+    "Stored values of Balances",
+    "account"
+   ],
+   "error": true
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Balances.transferKeepAlive",
+    "args": [
+     "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+     "1000000000000"
+    ]
+   },
+   "includes": [
+    "0x0603006d6f646c70792f74727372790000000000000000000000000000000000000000070010a5d4e8",
+    "value: 1000000000000 base units = 0.01 tPOT",
+    "0x6d6f646c70792f70616464720000000000000000",
+    "Nothing was signed or sent"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Utility.batchAll",
+    "args": [
+     [
+      {
+       "call": "System.remarkWithEvent",
+       "args": [
+        "a"
+       ]
+      },
+      "0x0603006d6f646c70792f74727372790000000000000000000000000000000000000000070010a5d4e8"
+     ]
+    ]
+   },
+   "includes": [
+    "0x010208000704610603006d6f646c70792f74727372790000000000000000000000000000000000000000070010a5d4e8",
+    "calls: 2 calls"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "System.remarkWithEvent",
+    "args": [
+     "native call from a 0x account, test 1"
+    ],
+    "network": "mainnet"
+   },
+   "includes": [
+    "0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c20746573742031",
+    "Portaldot V3 mainnet",
+    "no public Ethereum RPC"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Balances.transferKeepAlive",
+    "args": [
+     "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+     "1.5"
+    ]
+   },
+   "includes": [
+    "has a decimal point",
+    "150000000000000",
+    "convert_amount"
+   ],
+   "error": true
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "to": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "value": "0xabababababababababababababababababababababababababababababababab"
+   },
+   "error": true,
+   "includes": [
+    "larger than 2^128 wei"
+   ]
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "to": "0x6d6f646c70792f70616464720000000000000000",
+    "data": "0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c20746573742031"
+   },
+   "includes": [
+    "the pallets address: this runs a native call, System.remarkWithEvent",
+    "gasUsed 0",
+    "(estimate + 10 percent)",
+    "No fields to copy"
+   ]
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x1111111111111111111111111111111111111111",
+    "to": "0x6d6f646c70792f70616464720000000000000000",
+    "data": "0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c20746573742031"
+   },
+   "includes": [
+    "chainId: 420420777, type: 'eip1559'",
+    "cast mktx 0x6D6f646c70792F70616464720000000000000000",
+    "--priority-gas-price 0",
+    "max priority fee per gas: 0"
+   ]
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x1111111111111111111111111111111111111111",
+    "to": "0x6d6f646c70792f70616464720000000000000000",
+    "data": "0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c20746573742031",
+    "network": "mainnet"
+   },
+   "includes": [
+    "through the node's runtime API (ReviveApi",
+    "There is nowhere to send this transaction on the Portaldot V3 mainnet today",
+    "chainId: 780780777"
+   ],
+   "excludes": [
+    "tPOT"
+   ]
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "to": "0x1111111111111111111111111111111111111111",
+    "value": "1.5"
+   },
+   "includes": [
+    "decimal point",
+    "1500000000000000000",
+    "convert_amount"
+   ],
+   "error": true
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x019030bff84bbf433c0668196acd288cd763e4a2",
+    "data": "0x313ce567"
+   },
+   "includes": [
+    "Result: it succeeds and returns one 32-byte word. As a number: 18",
+    "is a contract",
+    "msg.sender = 0x8DDEe436166f311ddeED36d714B08F512670d16e",
+    "To send it as the native call Revive.call"
+   ]
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x0000000000000000000000000000000000000004",
+    "data": "0x1234"
+   },
+   "includes": [
+    "built-in precompile",
+    "- return data: 0x1234"
+   ]
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x000000000000000000000000000000000000000a"
+   },
+   "includes": [
+    "the chain refuses this call: Revive.UnsupportedPrecompileAddress"
+   ]
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x019030bff84bbf433c0668196acd288cd763e4a2",
+    "data": "0x313ce567",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "there is no contract at 0x019030Bff84bbf433C0668196aCd288cD763e4A2",
+    "the mainnet had no contracts at all"
+   ]
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x1234"
+   },
+   "includes": [
+    "0x and 40 hex characters"
+   ],
+   "error": true
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "artifact_path": "//some-host/share/out/A.json"
+   },
+   "error": true,
+   "includes": [
+    "network or device path",
+    "nothing was read"
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0xabababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+   },
+   "error": true,
+   "includes": [
+    "size of a private key or a seed"
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0x600160005360016000f3"
+   },
+   "includes": [
+    "Result: it would deploy",
+    "13.188 tPOT (1318800000000000 base units)",
+    "0.078 tPOT x L + 13.11 tPOT",
+    "the same as the chain's answer",
+    "api.tx.revive.instantiateWithCode("
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0x60006000fd"
+   },
+   "includes": [
+    "the constructor reverts, so nothing would be deployed",
+    "without a reason"
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0x600160005360016000f3",
+    "salt": "0x1111111111111111111111111111111111111111111111111111111111111111"
+   },
+   "includes": [
+    "the CREATE2 address of",
+    "It does not depend on the nonce"
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0x600160005360016000f3",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "13.188 POT (1318800000000000 base units)",
+    "use the native call"
+   ]
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "Give exactly one of code"
+   ],
+   "error": true
+  },
+  {
+   "tool": "simulate_contract_deploy",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "code": "0x6080__$1234567890123456789012345678901234$__00"
+   },
+   "includes": [
+    "unlinked library placeholder"
+   ],
+   "error": true
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0xd56478b42c6be657c123c44f2bebecf0eaae3c7e689c69b17deb2cfdee0cf1ac"
+   },
+   "includes": [
+    "System.remarkWithEvent",
+    "native call from a 0x account, test 1",
+    "gasUsed 0 and no logs by design",
+    "System.Remarked"
+   ]
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0xfc56147732c9eb9b9095658623c0da101caba98d29ebc1c805209dda0cac9c0c"
+   },
+   "includes": [
+    "Balances.transferKeepAlive",
+    "1000000000000 (0.01 tPOT)",
+    "Balances.Transfer"
+   ]
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "block": 452626,
+    "index": 0
+   },
+   "includes": [
+    "Timestamp.set, success (an inherent"
+   ]
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0xd56478b42c6be657c123c44f2bebecf0eaae3c7e689c69b17deb2cfdee0cf1ac",
+    "search_blocks": 3,
+    "network": "mainnet"
+   },
+   "includes": [
+    "cannot be looked up there"
+   ],
+   "error": true
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0x8ddee436166f311ddeed36d714b08f512670d16e"
+   },
+   "includes": [
+    "is not a transaction hash"
+   ],
+   "error": true
+  },
+  {
+   "tool": "get_block",
+   "args": {
+    "block": 452626
+   },
+   "includes": [
+    "Revive.ethTransact: an Ethereum transaction, hash 0xd56478b42c6be657c123c44f2bebecf0eaae3c7e689c69b17deb2cfdee0cf1ac",
+    "Ethereum block hash: 0xff00442aca2aba2565d7baad7cb0850198b61bc76ce3cf7956593ff374ec1118",
+    "Timestamp.set (inherent"
+   ]
+  },
+  {
+   "tool": "get_block",
+   "args": {
+    "block": "0xff00442aca2aba2565d7baad7cb0850198b61bc76ce3cf7956593ff374ec1118"
+   },
+   "includes": [
+    "is the Ethereum-side hash of block 452626",
+    "0xd1f9094a8185f82dc3fc6794985ed967075fa85a42a40cd8b7aae8e9304a473f"
+   ]
+  },
+  {
+   "tool": "get_block",
+   "args": {
+    "block": 0
+   },
+   "includes": [
+    "0xd4f9acbcf7f52388d8b095abe3c198d19fc510e0343e643e87cfbccb155283bd",
+    "This block holds no extrinsics at all"
+   ]
+  },
+  {
+   "tool": "get_block",
+   "args": {
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "Timestamp.set (inherent"
+   ]
+  },
+  {
+   "tool": "get_block",
+   "args": {
+    "block": "abc"
+   },
+   "includes": [
+    "is not a block"
+   ],
+   "error": true
+  },
+  {
+   "tool": "get_contract_events",
+   "args": {
+    "address": "0x072a1022f537a0da496801239725539101a41bb2",
+    "from_block": 463584
+   },
+   "includes": [
+    "served by eth_getLogs: NO",
+    "Revive.call, signed by",
+    "Why some are missing"
+   ]
+  },
+  {
+   "tool": "get_contract_events",
+   "args": {
+    "address": "0xc05a1f041a42ffa96fc24a3aebc576b1157aa7f6",
+    "from_block": 389240
+   },
+   "includes": [
+    "served by eth_getLogs: yes",
+    "Revive.ethTransact: Ethereum transaction 0x44b83311cf8c271619f455a1cd01403b49f20fc270cfa1c01f511ea9dc39c974"
+   ]
+  },
+  {
+   "tool": "get_contract_events",
+   "args": {
+    "address": "0xc05a1f041a42ffa96fc24a3aebc576b1157aa7f6",
+    "from_block": 1000,
+    "to_block": 1009,
+    "network": "mainnet"
+   },
+   "includes": [
+    "0 events",
+    "eth_getLogs: not asked"
+   ]
+  },
+  {
+   "tool": "get_contract_events",
+   "args": {
+    "address": "0xc05a1f041a42ffa96fc24a3aebc576b1157aa7f6",
+    "from_block": 1000,
+    "to_block": 1050
+   },
+   "includes": [
+    "At most 50 blocks per call"
+   ],
+   "error": true
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Failed to filter logs\"}"
+   },
+   "includes": [
+    "Best match in our list: E33"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32602,\"message\":\"Invalid params\",\"data\":\"unknown variant `newHeads`, expected `newBlockHeaders` or `logs` at line 1 column 10\"}"
+   },
+   "includes": [
+    "Best match in our list: E30"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "failed to run contract: Module(ModuleError { index: 80, error: [31, 0, 0, 0], message: Some(\"InvalidInstruction\") })"
+   },
+   "includes": [
+    "Revive.InvalidInstruction (module 80, error 31)",
+    "Best match in our list: E31"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "list"
+   },
+   "includes": [
+    "E33."
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "1010: Invalid Transaction: Inability to pay some fees (e.g. account balance too low)"
+   },
+   "includes": [
+    "Best match in our list: E1",
+    "InvalidTransaction Payment",
+    "estimate_eth_transaction"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"module\":{\"index\":80,\"error\":\"0x18000000\"}}"
+   },
+   "includes": [
+    "Revive.StorageDepositLimitExhausted (module 80, error 24)",
+    "testnet's live metadata",
+    "Best match in our list: E7"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":3,\"message\":\"execution reverted: revert: test message\",\"data\":\"0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000c74657374206d6573736167650000000000000000000000000000000000000000\"}"
+   },
+   "includes": [
+    "It reverted with the message \"test message\"",
+    "Best match in our list: E26"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "1014: Priority is too low: (2 vs 2)"
+   },
+   "includes": [
+    "1014 Priority is too low",
+    "standard Substrate meaning, not measured by us on this chain",
+    "Best match in our list: E12"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "6.2",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Balances.InsufficientBalance (module 6, error 2)",
+    "mainnet's live metadata"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+   },
+   "includes": [
+    "secret recovery phrase"
+   ],
+   "error": true
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "Token(BelowMinimum)"
+   },
+   "includes": [
+    "Token(BelowMinimum): the account would hold less than the minimum",
+    "minBalance"
+   ],
+   "excludes": [
+    "AssetConversion.BelowMinimum"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"token\":\"BelowMinimum\"}"
+   },
+   "includes": [
+    "Token(BelowMinimum): the account would hold less than the minimum"
+   ],
+   "excludes": [
+    "AssetConversion.BelowMinimum"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "AssetConversion.BelowMinimum"
+   },
+   "includes": [
+    "AssetConversion.BelowMinimum (module "
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": {
+     "module": {
+      "index": 80,
+      "error": "0x18000000"
+     }
+    }
+   },
+   "includes": [
+    "(module 80, error 24)"
+   ]
+  },
+  {
+   "tool": "simulate_contract_call",
+   "args": {
+    "from": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "to": "0x0000000200000000000000000000000000010000",
+    "data": "0x313ce567",
+    "value": 0
+   },
+   "includes": [
+    "Dry run of a contract call",
+    "so the address is a built-in precompile"
+   ]
+  },
+  {
+   "tool": "convert_amount",
+   "args": {
+    "amount": "99999999999999999999999999999999999999999",
+    "unit": "token"
+   },
+   "includes": [
+    "more than a u128 can hold"
+   ]
+  },
+  {
+   "tool": "get_account",
+   "args": {
+    "address": "0x000000000000000000000000000000000000dEaD"
+   },
+   "includes": [
+    "not an ordinary account",
+    "It is not an account to pay"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Assets.transfer",
+    "args": {
+     "id": 2,
+     "target": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+     "amount": "5"
+    },
+    "sender": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "covers it: yes",
+    "counts tPOT only"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.png binary
+
+# Built or generated files: never convert the bundle, and keep them out of the language statistics
+plugins/*/server/index.mjs -text linguist-generated=true
+server-src/src/generated/** linguist-generated=true

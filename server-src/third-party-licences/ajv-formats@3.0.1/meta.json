@@ -1,0 +1,7 @@
+{
+  "name": "ajv-formats",
+  "version": "3.0.1",
+  "license": "MIT",
+  "repository": "git+https://github.com/ajv-validator/ajv-formats.git",
+  "from": "the LICENSE file of the npm package"
+}

@@ -1,0 +1,16 @@
+# Dependencies of the server source. The plugin itself ships one bundled file and needs none.
+node_modules/
+
+# Secrets: never commit
+.env
+.env.*
+
+# Local results of test and eval runs
+plugins/*/evals/results/
+*.log
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

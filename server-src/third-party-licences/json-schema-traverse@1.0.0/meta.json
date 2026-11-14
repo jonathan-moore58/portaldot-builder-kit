@@ -1,0 +1,7 @@
+{
+  "name": "json-schema-traverse",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "git+https://github.com/epoberezkin/json-schema-traverse.git",
+  "from": "the LICENSE file of the npm package"
+}
