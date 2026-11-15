@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WsProvider } from '@polkadot/api';
 import { closeAll, getConn } from '../../src/lib/chain.ts';
+import { measuredFor } from '../../src/lib/mistakes.ts';
 import { runTool } from '../../src/lib/tool.ts';
 import tool from '../../src/tools/explain_error.ts';
 import encodeCall from '../../src/tools/encode_call.ts';
@@ -235,11 +236,55 @@ test('error texts that other tools print are understood', { timeout: 180_000 }, 
 
   // encode_call with a 0x sender that holds nothing: the Ethereum route's estimate fails
   const encoded = await runTool(encodeCall, { call: 'Balances.transferKeepAlive', args: [TREASURY_SS58, '1000000000000'], sender: fresh });
-  const failed = /eth_estimateGas failed: .*$/m.exec(encoded.text)?.[0];
+  // older versions print "eth_estimateGas failed: ...", newer ones the dry run's "reply: {...}"
+  const failed = /(?:eth_estimateGas failed: |reply: ).*Failed to dispatch call.*$/m.exec(encoded.text)?.[0];
   assert.ok(failed, encoded.text.slice(0, 800));
   const r3 = await explain(failed);
   assert.equal(bestOf(r3.text), 'E29');
   assert.match(r3.text, /Token\(FundsUnavailable\)/);
+});
+
+test('texts measured on Nov 15, 2026: bytes the node cannot read, the two "Invalid transaction", a dispatch error with its cases', { timeout: 120_000 }, async () => {
+  // the replies of author_submitExtrinsic (1040), author_submitAndWatchExtrinsic (1001) and both (1002), as @polkadot/api printed them
+  const unreadable = [
+    '1040: Client error: Could not decode `OpaqueExtrinsic.0`:\n\tNot enough data to decode vector\n',
+    '1001: Extrinsic has invalid format: Could not decode `OpaqueExtrinsic.0`:\n\tNot enough data to decode vector\n',
+    '1002: Verification Error: Runtime error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed\nWASM backtrace:\nerror while executing at wasm backtrace:\n    0: 0xb05592 - portaldot_v3_runtime.wasm!__rustc[4b1ee1ef74718a7b]::rust_begin_unwind\n    1:  0x1f5f9 - portaldot_v3_runtime.wasm!core[973facb28fb2967]::panicking::panic_fmt\n    2: 0x9465bd - portaldot_v3_runtime.wasm!TaggedTransactionQueue_validate_transaction',
+  ];
+  for (const text of unreadable) {
+    const r = await explain(text);
+    assert.equal(bestOf(r.text), 'E34', `${text}\n---\n${r.text.slice(0, 600)}`);
+  }
+  assert.match((await explain(unreadable[0])).text, /1040 Client error: .*measured on this chain on Nov 15, 2026/);
+
+  // the Ethereum RPC's own refusal against the pool's: the same words, told apart by the code
+  const own = await explain('{"code":-32000,"message":"Invalid transaction"}');
+  assert.equal(bestOf(own.text), 'E35', own.text.slice(0, 600));
+  assert.doesNotMatch(own.text, /^- E1\. /m);
+  assert.doesNotMatch(own.text, /- 1010 Invalid Transaction:/);
+  const pool = await explain('{"code":1010,"message":"Invalid Transaction"}');
+  assert.equal(bestOf(pool.text), 'E1', pool.text.slice(0, 600));
+  assert.doesNotMatch(pool.text, /E35\./);
+
+  // a module error inside "Failed to dispatch call": the error and its measured cases first, then E29 short
+  const { api } = await getConn('testnet');
+  const name = chainName(api, 47, 32);
+  const r = await explain('{"code":-32000,"message":"Failed to dispatch call: Module(ModuleError { index: 47, error: [32, 0, 0, 0], message: Some(\\"NoConfig\\") })"}');
+  const at = r.text.indexOf(`- ${name} (module 47, error 32)`);
+  assert.ok(at >= 0, r.text.slice(0, 800));
+  assert.ok(at < r.text.indexOf('Best match in our list: E29'), 'the named error comes before E29');
+  assert.match(r.text, /^E29\. "Failed to dispatch call" when a 0x account estimates a native call$/m);
+  assert.match(r.text, /Ask explain_error for "E29"/);
+  assert.doesNotMatch(r.text, /\*\*Cause:\*\*/, 'E29 is shown with its title and one line only');
+  if (name === 'Nfts.NoConfig' && measuredFor('Nfts', 'NoConfig').length) {
+    assert.match(r.text, /^ {2}Seen in our testnet dry runs of Nov 15, 2026: Nfts\.mint, /m);
+    assert.equal((r.text.match(/references\/native-call-errors\.md/g) ?? []).length, 1, 'the file is named once');
+  }
+  // a Token variant inside the same form gets its measured cases too
+  const below = await explain('{"code":-32000,"message":"Failed to dispatch call: Token(BelowMinimum)"}');
+  assert.equal(bestOf(below.text), 'E29');
+  assert.ok(below.text.indexOf('Token(BelowMinimum): the account would hold less') < below.text.indexOf('Best match in our list: E29'));
+  if (measuredFor('Token', 'BelowMinimum').length) assert.match(below.text, /^ {2}Seen in our testnet dry runs of Nov 15, 2026: /m);
 });
 
 test('when the node cannot be reached: pure matches still answer, module errors use the saved metadata', { timeout: 120_000 }, () => {

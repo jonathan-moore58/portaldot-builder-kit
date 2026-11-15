@@ -1,6 +1,6 @@
 {
   "name": "portaldot-dev-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Read-only Portaldot V3 chain tools for coding assistants (MCP server). By the Bridge Zero team.",
   "license": "Apache-2.0",

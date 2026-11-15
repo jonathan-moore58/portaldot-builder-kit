@@ -1,6 +1,6 @@
 # EVM checks: what the EVM and the Ethereum RPC really do
 
-Read-only measurements on the Portaldot V3 testnet (Ethereum RPC `https://test-evm-rpc-v3.portaldot.dev`, chain id 420420777, client `eth-rpc/main-fddd431`; Substrate node `wss://test-node-v3.portaldot.dev`), made by the Bridge Zero team on Nov 14, 2026. The checks that need only the node were repeated on the mainnet (`wss://live-v3-node.portaldot.dev`, which has no Ethereum RPC). Nothing was sent: every answer comes from `eth_call`, `eth_estimateGas`, block and state reads, or the node's runtime API.
+Read-only measurements on the Portaldot V3 testnet (Ethereum RPC `https://test-evm-rpc-v3.portaldot.dev`, chain id 420420777, client `eth-rpc/main-fddd431`; Substrate node `wss://test-node-v3.portaldot.dev`), made by the Bridge Zero team on Nov 14, 2026. The checks that need only the node were repeated on the mainnet (`wss://live-v3-node.portaldot.dev`, which has no Ethereum RPC). Nothing was sent: every answer comes from `eth_call`, `eth_estimateGas`, block and state reads, or the node's runtime API. The exception is section 5, whose rows marked Nov 15, 2026 include sends that could not be accepted.
 
 The main findings:
 
@@ -106,7 +106,7 @@ Every asset of the Assets module has an ERC-20 interface at a fixed address. Che
 
 ## 5. The JSON-RPC surface
 
-Each method once with harmless parameters, on Nov 14, 2026. Nothing that sends or signs was called. Checked.
+Each method once with harmless parameters, on Nov 14, 2026. Nothing that sends or signs was called. Checked. On Nov 15, 2026 we asked the methods again and added those that send or sign, with requests that could not be accepted: transactions signed by new, empty accounts with random keys held only in memory. All were refused. Checked; those rows say Nov 15, 2026.
 
 | Method | Answer |
 |---|---|
@@ -114,7 +114,7 @@ Each method once with harmless parameters, on Nov 14, 2026. Nothing that sends o
 | `web3_clientVersion` | `eth-rpc/main-fddd431/x86_64-unknown-linux-gnu/rustc1.98.0` |
 | `eth_syncing`, `eth_accounts`, `net_listening`, `net_peerCount` | `false`, `[]`, `true`, `0x1` |
 | `eth_blockNumber`, `eth_gasPrice`, `eth_maxPriorityFeePerGas` | answers; the gas price was 15690 to 15695 wei; the priority fee `0x0` |
-| `eth_feeHistory(4, latest, [25, 75])` | answers: `baseFeePerGas` the same in every block, `gasUsedRatio` 0, every `reward` `0x0` |
+| `eth_feeHistory("0x4", "latest", [25, 75])` | answers: `baseFeePerGas` the same in every block, `gasUsedRatio` 0, every `reward` `0x0`. The block count must be hex: the JSON number `4` answers ``{"code":-32602,"message":"Invalid params","data":"invalid type: integer `4`, expected a (both 0x-prefixed or not) hex string or byte array containing between (0; 32] bytes at line 1 column 1"}`` (Nov 15, 2026, measured twice; `errors.md` E36) |
 | `eth_getBalance`, `eth_getCode`, `eth_getStorageAt`, `eth_getTransactionCount` (`latest` and `pending`) | answer |
 | `eth_getBlockByNumber`, `eth_getBlockByHash`, `eth_getBlockTransactionCountByNumber`, `eth_getBlockTransactionCountByHash` | answer |
 | `eth_getTransactionByHash`, `eth_getTransactionByBlockNumberAndIndex`, `eth_getTransactionByBlockHashAndIndex`, `eth_getTransactionReceipt`, `eth_getBlockReceipts` | answer; an unknown hash gives `null`, with no error |
@@ -123,7 +123,10 @@ Each method once with harmless parameters, on Nov 14, 2026. Nothing that sends o
 | `eth_estimateGas` | answers, but ignores a state override: with an override that put reverting code at the target it returned the same estimate as without |
 | `debug_traceTransaction(hash, {"tracer":"callTracer"})`, `debug_traceBlockByNumber`, `debug_traceCall` (`callTracer`, `prestateTracer`) | answer. `debug_traceTransaction` without a tracer object answered `{"code":-32000,"message":"No Ethereum extrinsic found"}` for the same, existing transaction |
 | `eth_subscribe` over HTTP | `{"code":-32603,"message":"Internal error"}` |
-| `eth_subscribe` over WebSocket, `wss://test-evm-rpc-v3.portaldot.dev` | the same host answers on `wss://` (`eth_chainId` gave `0x190f1ca9`). `["newBlockHeaders"]` sent one notification per block (two blocks in a row, then `eth_unsubscribe` returned `true`), and `["logs", {}]` gave a subscription id. `["newHeads"]` answered ``{"code":-32602,"message":"Invalid params","data":"unknown variant `newHeads`, expected `newBlockHeaders` or `logs` at line 1 column 10"}``, and `["newPendingTransactions"]` the same with its own name |
+| `eth_subscribe` over WebSocket, `wss://test-evm-rpc-v3.portaldot.dev` | the same host answers on `wss://` (`eth_chainId` gave `0x190f1ca9`). `["newBlockHeaders"]` sent one notification per block (two blocks in a row, then `eth_unsubscribe` returned `true`), and `["logs", {}]` gave a subscription id. `["newHeads"]` answered ``{"code":-32602,"message":"Invalid params","data":"unknown variant `newHeads`, expected `newBlockHeaders` or `logs` at line 1 column 10"}``, and `["newPendingTransactions"]` the same with its own name. A subscription id is a text of 16 letters and digits (for example `LWtrF54TSceGp2Bb`), not `0x` hex, and `eth_unsubscribe` of an id that does not exist answers `false`, not an error (Nov 15, 2026; the id form seen twice) |
+| `eth_sendRawTransaction` | text that is not hex of whole bytes answers `-32602` `Invalid params` (`OddLength`, `InvalidHexCharacter`; `errors.md` E36). Bytes it cannot decode as an Ethereum transaction (nonsense, cut off, a Substrate extrinsic, a legacy transaction without a chain id) answer `{"code":-32000,"message":"Invalid transaction"}` (E35). The rest it passes on to the node, even a transaction signed for chain id 1, a blob (type 3) or a set-code (type 4) transaction; each one we sent came back the first time as `{"code":1010,"message":"Invalid Transaction"}`, with no reason (E1). A raw transaction without `0x` was passed on too (Nov 15, 2026) |
+| `eth_sendTransaction` | `{"code":-32000,"message":"Account not found for address 0x..."}`: the RPC holds no keys (`errors.md` E37) (Nov 15, 2026, measured twice) |
+| `eth_sign`, `eth_signTypedData_v4` | `{"code":-32601,"message":"Method not found"}` (Nov 15, 2026) |
 | `eth_createAccessList`, `eth_getProof`, `eth_simulateV1`, `eth_blobBaseFee`, `eth_newFilter`, `eth_newBlockFilter`, `eth_newPendingTransactionFilter`, `eth_getFilterChanges`, `eth_getFilterLogs`, `eth_uninstallFilter`, `txpool_content`, `txpool_status`, `rpc_modules`, `debug_traceBlockByHash`, `eth_getUncleCountByBlockNumber`, `eth_protocolVersion`, `eth_coinbase`, `eth_mining`, `eth_hashrate`, `web3_sha3`, `eth_getHeaderByNumber` | `{"code":-32601,"message":"Method not found"}` |
 
 Field quirks, seen in the blocks and receipts of three blocks that hold Ethereum transactions (450413, 463467, 463615):

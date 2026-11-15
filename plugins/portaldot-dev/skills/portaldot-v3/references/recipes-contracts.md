@@ -6,7 +6,7 @@ By the Bridge Zero team, an independent project and not an official Portaldot on
 
 You need: Node 20 or newer with @polkadot/api 17 (`recipes.md`), recipe 0 saved as `v3.mjs`, and Foundry for the shell parts (they ran with Foundry 1.8.5 in Git Bash on Windows; any bash works). Error numbers (E1, E2 and so on) refer to `errors.md`.
 
-- 2. Solidity on the testnet with Foundry and cast: 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path
+- 2. Solidity on the testnet with Foundry and cast: 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path, 2f read why the node refuses an Ethereum transaction, without sending it
 - 3. Call a contract from a native account (`revive.call`)
 - 4. Call a native module from a `0x` account
 
@@ -264,6 +264,54 @@ What can go wrong (each seen in a dry run on Nov 14, 2026):
 Basis: **Proven**: a contract was deployed this way on Oct 19, 2026 (899 bytes, deposit 83.232 tPOT, fee 0.1285 tPOT). This exact script is **Assembled**: on Nov 14, 2026 it ran up to the signing step for init code of 1, 100 and 1000 bytes of runtime code and for a reverting constructor, and the limits passed a second dry run made with them. Not proven: a deployment with a salt, `uploadCode` followed by `instantiate`, and PolkaVM code.
 
 Tool: `simulate_contract_deploy` does steps 1 and 2, and reads the artifact from a file inside the project folder (`artifact_path`; a network path is refused).
+
+### 2f. Read why the node refuses an Ethereum transaction, without sending it
+
+What it does: `eth_sendRawTransaction` answers every transaction the node refuses with the same bare `{"code":1010,"message":"Invalid Transaction"}` (E1). This script puts the signed transaction into the call `revive.ethTransact`, the way the Ethereum RPC hands it to the node, and asks the node's own pool check about that unsigned extrinsic. Nothing is sent. Use it on the `RAW` of recipe 2c, in place of `cast publish`.
+
+```js
+// why-refused.mjs: ask the node why it would refuse a signed Ethereum transaction, without sending it.
+// Usage: node why-refused.mjs <the raw signed transaction, 0x...>
+import { connect } from './v3.mjs';
+
+const raw = process.argv[2]; // for example RAW from recipe 2c (cast mktx), before cast publish
+if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(raw ?? '')) throw new Error('give the raw signed transaction as 0x hex');
+const { api } = await connect('testnet');
+
+// The Ethereum RPC hands a transaction to the node as an unsigned revive.ethTransact extrinsic (recipe 4, step 3).
+const xt = api.tx.revive.ethTransact(raw); // not signed: length prefix, version byte 0x04, then the call
+const at = (await api.rpc.chain.getFinalizedHead()).toHex();
+// The pool's own check: source 0x02 (External, as for a sent transaction), the extrinsic, a block hash.
+const arg = `0x02${xt.toHex().slice(2)}${at.slice(2)}`;
+const out = await api.rpc.state.call('TaggedTransactionQueue_validate_transaction', arg, at);
+const v = api.createType('Result<ValidTransaction, TransactionValidityError>', out);
+if (v.isOk) console.log('valid: the node would take it into its pool');
+else {
+  const e = v.asErr;
+  const reason = e.isInvalid ? `Invalid ${e.asInvalid.type}` : `Unknown ${e.asUnknown.type}`;
+  console.log(`refused: ${reason} (${JSON.stringify(e.toHuman())})`);
+}
+await api.disconnect();
+```
+
+Run: `node why-refused.mjs "$RAW"`, with `RAW` from `cast mktx` (recipe 2c) or from `signTransaction` in viem or ethers.
+
+What you should see (Nov 15, 2026, a 1 tPOT transfer of type 2 for chain id 420420777, gas limit = estimate + 10 percent, max fee = gas price + one eighth, signed by a new random key whose account was empty):
+
+```
+refused: Invalid Payment ({"Invalid":"Payment"})
+```
+
+- `Payment` is the balance check of E1: the account cannot pay value + gas limit x base fee (`eth_gasPrice`), or does not exist yet. Fund it with at least value + gas limit x max fee (the safer rule of E1's fix), or lower a padded gas limit to the estimate + 10 percent (E1).
+- The same transfer signed for chain id 1 printed `refused: Invalid Call ({"Invalid":"Call"})`. In our measurements of Nov 15, 2026 the same check said `Call` for a blob (type 3) and a set-code (type 4) transaction too (E1).
+- Bytes that are no Ethereum transaction at all (`0xdeadbeef`) also printed `Invalid Call`. `eth_sendRawTransaction` refuses such bytes itself, with `-32000` `Invalid transaction` (E35), so they never reach this check.
+- The check is the node's, not the Ethereum RPC's. A legacy transaction without a chain id got `Payment` from it, although the RPC refuses that transaction before the node sees it (E35).
+- An empty account fails the balance check first. A gas limit of 21000, a max fee of half the gas price and a nonce of 5, each signed by an empty account, all got `Payment`: from an empty account, the check does not show those mistakes.
+- `api.tx.revive.ethTransact(raw)` without signing gives the unsigned extrinsic; its hex starts with the length prefix, then `04`. The argument of `TaggedTransactionQueue_validate_transaction` is put together by hand: the source byte, the extrinsic with its length prefix, the block hash.
+
+Basis: **Proven**: on Nov 15, 2026 this exact script (with recipe 0 as `v3.mjs`) ran against the testnet, near block 475250, for three inputs: the type-2 transfer above (`Invalid Payment`), the same signed for chain id 1 (`Invalid Call`) and `0xdeadbeef` (`Invalid Call`). Each transaction came from a new random key held only in memory, whose account we checked was empty (balance 0, pending nonce 0) just before; nothing was sent. The other reasons above come from the same check, made the same way, during our measurements of Nov 15, 2026 (E1, E35). Not proven: the `valid` line (it needs an account that can pay), and what the check says for a funded account's other mistakes.
+
+Tool: none of the chain tools makes this check yet; `estimate_eth_transaction` checks the balance rule before you sign.
 
 ---
 

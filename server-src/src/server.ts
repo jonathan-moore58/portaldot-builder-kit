@@ -8,7 +8,7 @@ import { TOOLS } from './tools/index.ts';
 export const SERVER_INFO = {
   name: 'portaldot-dev',
   title: 'Portaldot V3 chain tools, by the Bridge Zero team',
-  version: '0.1.0',
+  version: '0.2.0',
 };
 
 // Read by the model at the start of a session, so it is short and says when to use what.

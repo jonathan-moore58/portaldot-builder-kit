@@ -1,7 +1,7 @@
 {
   "name": "portaldot-dev",
   "displayName": "Portaldot Builder Kit, by the Bridge Zero team",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Checked facts and read-only chain tools for building on Portaldot V3: which call does a job and its exact arguments, both forms of an address, amounts in 14 and 18 decimals, fees and storage deposits, dry runs of contract calls and deployments, transactions seen from both sides, and what an error means. It never asks for a key and never sends a transaction. Made by the Bridge Zero team; an independent tool, not an official Portaldot one.",
   "author": { "name": "Bridge Zero team" },
   "homepage": "https://github.com/jonathan-moore58/portaldot-builder-kit",

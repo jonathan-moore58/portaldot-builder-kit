@@ -1,6 +1,6 @@
 # Portaldot V3: errors and traps
 
-What developers meet on Portaldot V3, why it happens, and what to do about it. Written by the Bridge Zero team and checked against the live chain on Nov 14, 2026, where an entry says so. An error text given with a measurement date is an exact copy of what the chain returned; standard Substrate texts that we did not measure are marked as such.
+What developers meet on Portaldot V3, why it happens, and what to do about it. Written by the Bridge Zero team and checked against the live chain on Nov 14 and 15, 2026, where an entry says so. An error text given with a measurement date is an exact copy of what the chain returned; standard Substrate texts that we did not measure are marked as such.
 
 Each entry has up to six parts, always in this order: **You see** (the error text or the symptom), **Cause**, **Fix**, **Not known**, **Others report** (what other builders say; names are left out) and **Basis**. The Basis line says how we know, with one of four words:
 
@@ -11,7 +11,7 @@ Each entry has up to six parts, always in this order: **You see** (the error tex
 
 E1 to E7 are the ones met most often.
 
-Recipe numbers refer to two files. In references/recipes.md: 0 connect and check the chain; 1 send the native token; 5 read a transaction's result and events on both sides (5a an Ethereum transaction, 5b a native extrinsic, 5c contract events from a native-path call, 5d in a browser); 6 convert between the two address forms; 7 an account's balance in both forms; 8 estimate a fee; 9 nonces, finality and sending safely. In references/recipes-contracts.md: 2 Solidity with Foundry and cast (2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction, 2e deploy on the native path); 3 call a contract from a native account; 4 call a native module from a 0x account.
+Recipe numbers refer to two files. In references/recipes.md: 0 connect and check the chain; 1 send the native token; 5 read a transaction's result and events on both sides (5a an Ethereum transaction, 5b a native extrinsic, 5c contract events from a native-path call, 5d in a browser); 6 convert between the two address forms; 7 an account's balance in both forms; 8 estimate a fee; 9 nonces, finality and sending safely. In references/recipes-contracts.md: 2 Solidity with Foundry and cast (2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction, 2e deploy on the native path, 2f read why the node refuses an Ethereum transaction, without sending it); 3 call a contract from a native account; 4 call a native module from a 0x account.
 
 The chain tool explain_error matches a pasted error text against these entries.
 
@@ -20,20 +20,26 @@ The chain tool explain_error matches a pasted error text against these entries.
 ### E1. Error 1010 "Invalid Transaction" when sending
 
 - **You see:** the node refuses the transaction when you submit it, and nothing is mined.
-  - From the Ethereum RPC (`eth_sendRawTransaction`, and so from MetaMask and `cast send`): `{"code":1010,"message":"Invalid Transaction"}`. It gives no reason.
-  - From the Substrate RPC, the reason follows: `{"code":1010,"message":"Invalid Transaction","data":"Inability to pay some fees (e.g. account balance too low)"}`. @polkadot/api shows it as `1010: Invalid Transaction: Inability to pay some fees (e.g. account balance too low)`.
-  - Before sending, `eth_estimateGas` and `eth_call` with a value the sender cannot pay answer `{"code":-32000,"message":"insufficient funds for gas * price + value (0): address 0x... have 0 (supplied gas ...)"}`.
+  - From the Ethereum RPC (`eth_sendRawTransaction`, and so from MetaMask and `cast send`): `{"code":1010,"message":"Invalid Transaction"}`. It gives no reason. Recipe 2f reads the reason from the node without sending.
+  - From the Substrate RPC, the reason follows: `{"code":1010,"message":"Invalid Transaction","data":"Inability to pay some fees (e.g. account balance too low)"}`. @polkadot/api 17 prints it as `1010: Invalid Transaction: Inability to pay some fees , e.g. account balance too low`, with a comma where the node's text has brackets (Checked on Nov 15, 2026).
+  - Before sending, `eth_estimateGas` and `eth_call` with a value the sender cannot pay answer `{"code":-32000,"message":"insufficient funds for gas * price + value (0): address 0x... have 0 (supplied gas ...)"}`. The `(0)` is not the amount needed: it was 0 for a 1 tPOT transfer too. `eth_call` ends the text with `(supplied gas None)`, `eth_estimateGas` with `(supplied gas Some(18446744073709551615))` (Checked on Nov 15, 2026).
+  - The same refused bytes sent again answer `{"code":1013,"message":"Transaction Already Imported"}` or `{"code":1012,"message":"Transaction is temporarily banned"}`, although nothing is pending (see Fix).
 - **Cause:** the transaction failed the node's checks before it ran.
   - The common case for an Ethereum transaction: the sender's balance is smaller than the gas limit times the base fee (`eth_gasPrice`), plus the value. On V3 the gas includes the storage deposit (E2), so gas limits are very large. A padded limit, or one copied from another chain, can ask for more than the account holds even when the real cost is small.
   - The Ethereum RPC gives the same text for other refusals too. A transaction with a max fee of 1 wei, below the base fee, got the same answer. It came from an empty account, so which check refused it is not known.
-  - On the Substrate RPC, the text after "Invalid Transaction" names the check. Measured on this chain: "Inability to pay some fees (e.g. account balance too low)" (the account cannot pay the fee, or does not exist yet) and "Transaction has a bad signature" (the wrong key, a payload signed for another chain or runtime version, or a mortal transaction sent after its validity period). Standard Substrate texts, not measured by us on this chain: "Transaction is outdated" (the nonce was already used, E12) and "Transaction has an ancient birth block" (the birth block of a mortal transaction is older than the 2400 block hashes the chain keeps).
+  - Measured on Nov 15, 2026: the RPC decodes and passes on a transaction signed for another chain id (1), a blob transaction (type 3, sent without its sidecar) and a set-code transaction (type 4, EIP-7702). Each came back as the same bare 1010. The node's own check (recipe 2f) names `Call` for these three, and `Payment` for the balance cases. A legacy transaction without a chain id does not get this far: the RPC refuses it itself (E35).
+  - From a new, empty account, a gas limit of 21000, a max fee of half the gas price and a nonce of 5 also got the bare 1010, and the node's check said `Payment` for each. An empty account fails the balance check anyway, so what each of these mistakes does by itself is not measured.
+  - On the Substrate RPC, the text after "Invalid Transaction" names the check. Measured on this chain: "Inability to pay some fees (e.g. account balance too low)" (the account cannot pay the fee, or does not exist yet) and "Transaction has a bad signature" (the wrong key, a payload signed for another chain or runtime version, or a mortal transaction sent after its validity period). A standard Substrate text, not measured by us on this chain: "Transaction is outdated" (the nonce was already used, E12).
+  - Measured on Nov 15, 2026, from new, empty accounts: "Transaction has an ancient birth block" for a mortal transaction born 3000 blocks back with a period of 4096 (the chain keeps 2400 block hashes); "Transaction call is not expected" for an ordinary call sent unsigned (`System.remark`); and "Transaction has a bad signature" for each of these mistakes: signed for another genesis hash, another spec version or another transaction version; the call or one byte of the signature changed after signing; an sr25519 signature marked as ed25519; and a mortal transaction signed 200 blocks back with a period of 64. A nonce of 5 on an account at 0, and a tip of 10^30, still answered "Inability to pay some fees". Bytes the node cannot read as a transaction get 1040, 1001 or 1002 instead (E34), and an unsigned `Balances.transferKeepAlive` got 1011 (E12).
 - **Fix:**
   - Gas limit = `eth_estimateGas` + 10%, not more. Max fee = `eth_gasPrice` + 1/8, with a priority fee of 0 (recipe 2c). The chain tool estimate_eth_transaction applies this rule and checks the balance.
   - Before signing, check that the balance >= value + gas limit x max fee. That is stricter than the refusal we measured (which used the base fee), so a transaction that passes it is not refused for its balance while the base fee stays below the max fee; estimate_eth_transaction checks with the max fee for that reason.
   - Fund a MetaMask account by sending native tPOT to its fallback `5...` address (recipe 6, E4).
   - A refused transaction did not enter the pool and did not use its nonce. Fix the cause, then sign again. Sending the same bytes again soon after gives `{"code":1012,"message":"Transaction is temporarily banned"}` (measured for a native extrinsic).
+  - On Nov 15, 2026, Ethereum transactions refused with 1010 and sent again about 0.6 s later got `{"code":1013,"message":"Transaction Already Imported"}` in 7 of 9 cases and 1012 in the other 2; the same delay gave 1013 for one transaction and 1012 for another when we measured again. One transaction got 1013 twice in a row, then 1012 6 s later and 30 s after that. Nothing was pending at any time (E12), so neither code means that the transaction is waiting. A native extrinsic got 1012 each time.
+  - To learn which check refuses an Ethereum transaction, ask the node without sending it (recipe 2f in `recipes-contracts.md`). It answered `Invalid Payment` for an empty account and `Invalid Call` for a transaction signed for chain id 1.
 - **Others report:** that every write from an external Ethereum account was refused with "Invalid Transaction". That is the text of the balance check above, so check that rule first. Our own Ethereum transactions went through when they followed it.
-- **Basis:** Checked on Nov 14, 2026: the texts marked as measured come from transactions that a brand-new account with no balance sent on purpose, so that they could not be included (three Ethereum transactions and three native extrinsics), and from dry runs. The balance rule was Checked on Nov 13 and 14, 2026. The fix is Experience from eight transactions sent between Oct 19 and Nov 13, 2026.
+- **Basis:** Checked on Nov 14, 2026: the texts marked as measured come from transactions that a brand-new account with no balance sent on purpose, so that they could not be included (three Ethereum transactions and three native extrinsics), and from dry runs. The balance rule was Checked on Nov 13 and 14, 2026. The fix is Experience from eight transactions sent between Oct 19 and Nov 13, 2026. Checked on Nov 15, 2026, the same way: refused submissions from new, empty accounts with random keys held only in memory, to the Substrate node (`author_submitExtrinsic` and `author_submitAndWatchExtrinsic`, testnet blocks 475079 to 475097) and to `eth_sendRawTransaction` (blocks 474651 to 474794, part of them again at blocks 474908 to 474913). Before each native case we read the node's own check of the same bytes (`TaggedTransactionQueue_validate_transaction` through `state_call`). For the Ethereum transactions we read it for a second copy signed the same way by another empty key (the replies to both copies were the same), and, when we repeated the measurement, for the exact bytes sent. The `(0)` and the `supplied gas` texts come from dry runs of Nov 15, 2026. Nothing was accepted.
 
 ### E2. The gas estimate looks far too large (MetaMask shows a review alert)
 
@@ -88,13 +94,13 @@ The chain tool explain_error matches a pasted error text against these entries.
 
 ### E5. State queries on old blocks fail ("State already discarded")
 
-- **You see:** `eth_getBalance`, `eth_getStorageAt` or `eth_call` at an older block answer "State already discarded", or `eth_getBlockByNumber` does not return an old block. A block after the head answers `{"code":-32000,"message":"hash not found"}`.
+- **You see:** `eth_getBalance`, `eth_getStorageAt` or `eth_call` at an older block answer "State already discarded", or `eth_getBlockByNumber` does not return an old block. A block after the head answers `{"code":-32000,"message":"hash not found"}` from `eth_getBalance` and `eth_call`, while `eth_getBlockByNumber` answers `null` for it. A block hash the RPC does not know answers `{"code":-32000,"message":"Ethereum block not found"}` from `eth_getBalance` and `eth_call` (E37), and `null` from `eth_getBlockByHash`.
 - **Cause:** in October 2026 the Ethereum RPC kept state for only about the last 256 blocks. Since Nov 13, 2026 it has served much older state: on Nov 14, 2026, `eth_getBalance` answered at block 1 and 300000 blocks back, and `eth_getBlockByNumber` returned block 1. The behaviour has changed once, so do not rely on either.
 - **Fix:**
   - Read old state from the Substrate node, which served block 1 on Nov 13 and 14, 2026: `(await api.at(blockHash)).query...`.
   - Or test the depth at run time before you depend on it.
 - **Others report:** an event that could no longer be found once its history became unavailable.
-- **Basis:** Checked in October 2026 (the 256-block limit, Oct 17 to Oct 20) and on Nov 13 and 14, 2026 (older state served, and the "hash not found" text). The fix is Experience.
+- **Basis:** Checked in October 2026 (the 256-block limit, Oct 17 to Oct 20) and on Nov 13 and 14, 2026 (older state served, and the "hash not found" text). The replies for a block 100000 after the head and for a random block hash Checked on Nov 15, 2026, each measured twice. The fix is Experience.
 
 ### E6. Logs missing for native-path calls (eth_getLogs returns [])
 
@@ -152,9 +158,10 @@ The chain tool explain_error matches a pasted error text against these entries.
   - Paste it into the chain tool explain_error, or name it with `api.registry.findMetaError(dispatchError.asModule)`.
   - For a dry-run JSON, use `api.registry.findMetaError(Uint8Array.of(index, firstByteOfError))`. The result gives `section`, `name` and `docs`.
   - Examples from Nov 14, 2026: 6 and `0x02000000` is `Balances.InsufficientBalance`; 80 and `0x03000000` is `Revive.OutOfGas` (a weight limit that is too low); 80 and `0x04000000` is `Revive.TransferFailed` (a value larger than the balance); 80 and `0x17000000` is `Revive.StorageDepositNotEnoughFunds`; 80 and `0x18000000` is `Revive.StorageDepositLimitExhausted` (E7).
+  - `Revive.TransferFailed` came for a value above the balance of an account that holds tPOT. From an account with no balance, a `Revive.call` with a value of 1 tPOT answered `Revive.StorageDepositNotEnoughFunds` instead, and so did an `instantiateWithCode` with a value of 0: from such an account this error does not point to the value. Fund the account.
   - An index belongs to one runtime version. For an old error, name it with the metadata of its block (`api.at(blockHash)`).
 - **Others report:** other builders found these hard to read too.
-- **Basis:** Checked on Nov 14, 2026 (the indices and names above, from the chain's metadata and from dry runs). The fix is Experience.
+- **Basis:** Checked on Nov 14, 2026 (the indices and names above, from the chain's metadata and from dry runs). The two `Revive.call` replies Checked on Nov 15, 2026 by dry run through the pallets address (E29), each measured twice. The fix is Experience.
 
 ### E11. @polkadot/api warns about unknown extensions, or decodes Revive results wrongly
 
@@ -173,16 +180,19 @@ The chain tool explain_error matches a pasted error text against these entries.
 
 ### E12. Nonce trouble: a stuck, pending or double send
 
-- **You see:** a transaction that never confirms, a second transaction refused while the first is pending, or the same transfer made twice. Standard Substrate texts for these cases, not measured by us on this chain: "Priority is too low" (code 1014: another transaction with the same nonce is already in the pool), "Transaction Already Imported" (code 1013: this exact transaction is already in the pool) and "Transaction is outdated" (code 1010: the nonce was already used).
+- **You see:** a transaction that never confirms, a second transaction refused while the first is pending, or the same transfer made twice. Standard Substrate texts for these cases, not measured by us on this chain: "Priority is too low" (code 1014: another transaction with the same nonce is already in the pool) and "Transaction is outdated" (code 1010: the nonce was already used). Measured on Nov 15, 2026: `{"code":1013,"message":"Transaction Already Imported"}` (in @polkadot/api, `1013: Transaction Already Imported: Any { .. }`) and `1011: Unknown Transaction Validity: NoUnsignedValidator`.
 - **Cause:** a transaction still pending in the pool, or a retry after a crash. Both sides share one nonce per account: `eth_getTransactionCount` equals `System.Account.nonce`. So an Ethereum transaction and a native extrinsic from the same account take numbers from the same sequence.
+  - Code 1013 does not prove that a transaction is waiting. Refused bytes sent again within about 2 s got it: 7 of 9 Ethereum transactions resent 0.6 s after their 1010 (E1), and on the Substrate node the bytes `0x00`, which are no transaction at all, at the fifth send, after three 1012 replies (E34). The Ethereum transactions were not pending: `eth_getTransactionCount(from, "pending")` stayed `0x0`, and none of them was in the node's `author_pendingExtrinsics`.
+  - Code 1011 with `NoUnsignedValidator` came for a `Balances.transferKeepAlive` sent unsigned: the runtime has no check that takes this call unsigned. Sign it. An unsigned `System.remark` got 1010 "Transaction call is not expected" instead (E1).
 - **Fix:**
   - Send only when there is nothing pending: `eth_getTransactionCount(from, "latest")` equals the `"pending"` count, or `system.accountNextIndex` equals `System.Account.nonce`.
   - Sign with an explicit nonce.
   - Write the transaction hash down before you submit it.
   - After a restart, settle what is open before sending again (recipe 9).
-- **Not known:** the Ethereum RPC's exact texts for a nonce that is too low or too high.
+  - Before you wait on a 1013, check whether the transaction is pending (the `"pending"` count, or `author_pendingExtrinsics`). If it is not, compare the nonce it was signed with against the account's nonce in blocks (`eth_getTransactionCount(from, "latest")`, or `System.Account.nonce`). Still at it: the transaction is not in a block. It was refused or dropped, since a refused transaction does not use its nonce (E1). Find out why (E1, recipe 2f) and sign again with that same nonce, so that at most one of the two can be included. Past it: this transaction, or another with that nonce, was included. Look it up by its hash (recipe 5a, or 5b for a native extrinsic; recipe 9 step 3 finds the block) and do not send it again. We have not measured what a resend of an included transaction answers.
+- **Not known:** the Ethereum RPC's exact texts for a nonce that is too low or too high. On Nov 15, 2026 a nonce of 5 on an account at 0, from a new, empty account, got the bare 1010 from the Ethereum RPC (the node's check said `Payment`) and "Inability to pay some fees" from the Substrate node. An empty account fails the balance check first, so this does not show what a funded account gets for a nonce too high. A nonce that is too low cannot be made from an empty account.
 - **Others report:** a reorganisation made a settled transfer look failed, the script retried, and tPOT moved twice. Wait for finality (E14).
-- **Basis:** Checked on Nov 14, 2026 (the shared nonce). That the two sides compete for one sequence follows from it; we never sent both at once. The fix is Experience.
+- **Basis:** Checked on Nov 14, 2026 (the shared nonce). That the two sides compete for one sequence follows from it; we never sent both at once. The 1013 and 1011 replies, the nonce of 5 and the pending checks after them Checked on Nov 15, 2026, from refused submissions of new, empty accounts on both RPCs. The fix is Experience.
 
 ### E13. The wrong chain, a reset testnet, or the guide's old endpoints
 
@@ -225,7 +235,10 @@ The chain tool explain_error matches a pasted error text against these entries.
   - The extrinsic succeeds even when the inner call fails (E9). Read the result inside `MultisigExecuted`.
   - The opener reserves `depositBase` + `depositFactor` x threshold until the call runs: 5.43 + 1.92 x 2 = 9.27 tPOT for 2 of 3.
   - Approvers who dry-run at different times get different limits, and so a different call hash. Round the limits so that every approver builds the same call.
-- **Basis:** Experience from multisig rounds on Oct 20, 2026. The error names, their texts and the deposit constants Checked on Nov 14, 2026.
+  - What `Multisig.asMulti` answered in dry runs: a threshold of 1, `MinimumThreshold`; the sender among the other signatories, `SenderInSignatories` (also from `asMultiThreshold1`); 101 signatories in all, `TooManySignatories` (the maximum is 100); a timepoint given when opening, `UnexpectedTimepoint`; no timepoint when approving an open operation, `NoTimepoint`; a timepoint that is not the opening one, `WrongTimepoint`; the same signatory approving twice, `AlreadyApproved`. `cancelAsMulti` of an operation that does not exist answered `Multisig.NotFound`. From an account with no balance, `asMulti` answered `Balances.InsufficientBalance`: it cannot reserve the deposit.
+  - In a dry run, a new operation's timepoint is {height: the best block, index: 0}. The approval that matched it (`AlreadyApproved`) answered `WrongTimepoint` when dry-run again at a later block.
+  - Not only multisig: in a dry run, `Utility.batch`, `Utility.forceBatch`, `Proxy.proxy`, `Sudo.sudo` and `Sudo.sudoAs` also answer as if they succeeded when the call inside fails (E29).
+- **Basis:** Experience from multisig rounds on Oct 20, 2026. The error names, their texts and the deposit constants Checked on Nov 14, 2026. The `asMulti` and `cancelAsMulti` replies and the timepoint Checked on Nov 15, 2026 by dry run through the pallets address (an approval was dry-run as `Utility.batchAll` [open, approve]); most of them measured twice, at two blocks. `MaxWeightTooLow` was not measured: it needs a second signatory's approval.
 
 ### E17. The account is removed, or a transfer is refused near the minimum balance
 
@@ -234,8 +247,10 @@ The chain tool explain_error matches a pasted error text against these entries.
   - `transferAllowDeath` may take an account below it, which removes the account and loses the rest. `transferKeepAlive` refuses instead.
   - A payment that creates a new account must be at least 0.1 tPOT.
   - `eth_getBalance` already leaves the 0.1 out, so a wallet's "max" on the Ethereum side keeps it. It shows (free - max(frozen, existential deposit)) x 10000 wei + the account's dust; reserved tPOT does not lower it.
+  - What the calls answered in dry runs: 0.01 tPOT to a new account, `Token(BelowMinimum)`, from both `transferKeepAlive` and `transferAllowDeath`. A `transferKeepAlive` that would leave the sender 0.05 tPOT, `Token(NotExpendable)`; the same with `transferAllowDeath` was accepted. A transfer of 0 to an account that does not exist was accepted, and so was one of 0 from such an account.
+  - An Assets token has its own minimum (`minBalance`): 1 unit of a token whose minimum is 10000, sent to an account that holds none of it, answered `Token(BelowMinimum)`. 10000 units of a token that is not sufficient, sent to an account with no tPOT, answered `Token(CannotCreate)`.
 - **Fix:** use `transferKeepAlive` for everyday sends, keep 0.1 tPOT on every account you use, and send at least 0.1 tPOT to a new account.
-- **Basis:** Checked on Nov 14, 2026 (the 0.1 tPOT; the `eth_getBalance` rule on 19 accounts of both networks, among them accounts with frozen and with reserved tPOT; no account had both, so that case is not measured). The behaviour of the two transfer calls is Experience from the chain's own text for them.
+- **Basis:** Checked on Nov 14, 2026 (the 0.1 tPOT; the `eth_getBalance` rule on 19 accounts of both networks, among them accounts with frozen and with reserved tPOT; no account had both, so that case is not measured). The behaviour of the two transfer calls is Experience from the chain's own text for them. The dry-run replies Checked on Nov 15, 2026 through the pallets address (E29), most of them measured twice; nothing was sent, so what a sent transfer of 0 does is not measured.
 
 ### E18. Not enough tPOT to deploy (no faucet, large deposits)
 
@@ -301,10 +316,10 @@ The chain tool explain_error matches a pasted error text against these entries.
 - **Others report:**
   - `block.prevrandao` is the same constant on every block. Checked on Nov 14, 2026: 2500000000000000 at 11 testnet blocks from block 1 to the head, and the same on the mainnet.
   - Staking rewards nobody claims are lost after 84 eras. Checked on Nov 14, 2026: `staking.historyDepth` is 84, and the chain keeps reward data only for that many eras.
-  - The native Scheduler refuses signed origins with `BadOrigin`.
+  - The native Scheduler refuses signed origins with `BadOrigin`. Checked on Nov 15, 2026 by dry run through the pallets address, each once: `Scheduler.scheduleAfter` and `Scheduler.cancel` from a signed account answered `Failed to dispatch call: BadOrigin`, and so did `Preimage.requestPreimage`, `Treasury.spendLocal`, `Treasury.removeApproval`, `Utility.dispatchAs` (with the Root origin), `Utility.withWeight` and `System.setCode`.
   - Revive has no ed25519, BLS or staking precompile. Checked on Nov 14, 2026 for BLS: the BLS12-381 precompiles (`0x0b` to `0x11`) are absent, and so is KZG (`0x0a`, E31). The precompiles `0x01` to `0x09` (`ecrecover`, `sha256`, `ripemd160`, identity, modexp, the bn256 curve, blake2f) and P256VERIFY at `0x100` work. ed25519 and staking precompiles were not checked.
   - The Portaldot wallet cannot sign Ethereum transactions, so a second wallet is needed for the Ethereum side.
-- **Basis:** Reported, except the parts marked Checked (by `eth_call` and the node's dry runs; `evm-checks.md` sections 1 and 2).
+- **Basis:** Reported, except the parts marked Checked (by `eth_call` and the node's dry runs; `evm-checks.md` sections 1 and 2; the Scheduler and the other `BadOrigin` replies by dry run on Nov 15, 2026, at testnet blocks 474737 to 474741).
 
 ### E25. The Nfts "Account" attribute namespace needs approval
 
@@ -334,8 +349,8 @@ The chain tool explain_error matches a pasted error text against these entries.
 - **You see:** `eth_call` or `eth_estimateGas` with a `gas` field answers `{"code":-32000,"message":"Invalid call: Payment"}`.
 - **Cause:** the gas limit is far below what V3 needs, because gas includes the storage deposit (E2). A limit of 21000, the cost of a plain transfer on Ethereum, gave this answer for a 1 tPOT transfer; so did a limit of 1.
 - **Fix:** leave `gas` out of `eth_call` and `eth_estimateGas`. For a transaction, use `eth_estimateGas` + 10% (E1), never a fixed number from Ethereum habits.
-- **Not known:** what `eth_sendRawTransaction` answers for a transaction with such a limit. We have not sent one.
-- **Basis:** Checked on Nov 14, 2026 (gas limits 21000 and 1).
+- **Not known:** what `eth_sendRawTransaction` answers for a transaction with such a limit from an account that can pay. On Nov 15, 2026 a new, empty account sent one with a gas limit of 21000: the bare `{"code":1010,"message":"Invalid Transaction"}` came back, and the node's own check of such a transaction said `Payment` (recipe 2f). An empty account fails the balance check anyway, so this does not show a separate check of the gas limit.
+- **Basis:** Checked on Nov 14, 2026 (gas limits 21000 and 1). The dry runs with these limits Checked again on Nov 15, 2026, and the refused transaction sent that day from a new, empty account.
 
 ### E28. "Method not found" (-32601)
 
@@ -359,12 +374,18 @@ The chain tool explain_error matches a pasted error text against these entries.
   - `Module(ModuleError { index, error, message })`: an error of the module with that index, named by `message`. `Assets.transfer` of an asset id that does not exist gave `Assets.Unknown` (module 39, error 3).
   - `Invalid call: Call`: the transaction is not a native call this route takes. Data that names no module (`0xffff`), data that is missing or `0x`, and a value above 0 (10000 wei and 1 tPOT tried) each gave it. Send such a call with value 0.
   - The estimate does not check that the account can pay the fee: the same empty account got an estimate for `System.remarkWithEvent`. The node checks that when the transaction is sent (E1).
+  - Measured on Nov 15, 2026 in 143 dry runs of well-formed calls of 18 modules (Balances, Assets, Nfts, Uniques, AssetConversion, Multisig, Proxy, Utility, Staking, NominationPools, Identity, Vesting, Preimage, Scheduler, Sudo, Treasury, System, Revive): every refusal came in this form, with code -32000 and no `data` field, and none was `Invalid call: Call`. A module error carries its name in the text, as `message: Some("Name")`. `eth_call` gave the same text as `eth_estimateGas`.
+  - The call runs as the account the `0x` address stands for. From the `0x` form of a native account that exists (and so is linked to it), it runs as that account: a transfer from the Treasury's `0x` form was judged against the Treasury's own balance, and a validator's `0x` form got `Staking.AlreadyBonded`. From an address that is not linked to a native account, such as the `0x` form of a native account that does not exist yet, it runs as its fallback account (E4).
+  - Some names mislead. `Nfts.mint` into a collection that does not exist answers `Nfts.NoConfig`, while `Nfts.transfer` answers `Nfts.UnknownCollection`. A swap on a pair that has no pool answers `AssetConversion.PoolEmpty`, whose text says "The pool exists but has no liquidity". `Assets.cancelApproval` of an approval that does not exist, on an asset that exists, answers `Assets.Unknown` ("The given asset ID is unknown"). `AssetConversion.createPool` with an asset that does not exist answers `Assets.Unknown` too: there the name is right, but the error comes from the Assets module (39), not from AssetConversion. `references/native-call-errors.md` lists the replies we measured, call by call.
+  - A dry run of a call that wraps another shows only the outer result. `Utility.batch`, `Utility.forceBatch` and `Proxy.proxy` answered with an estimate, as for success, although the call inside failed with `BadOrigin`; `Utility.batchAll` answered `Failed to dispatch call: BadOrigin`. `Sudo.sudo` of `Balances.transferKeepAlive`, a call that Root cannot make, dry-run with the sudo key's `0x` form as the sender (a dry run may name any sender), answered with an estimate too, and so did `Sudo.sudoAs` of `Balances.forceSetBalance`, a call that a signed account cannot make. An estimate carries no events, so it cannot show the inner results.
+  - From an account with no balance, `Assets.create`, `Assets.touch`, `Nfts.create`, `Multisig.asMulti` and `Identity.setIdentity` answered `Balances.InsufficientBalance` (module 6, error 2), while transfers and `Preimage.notePreimage` answered `Token(FundsUnavailable)`.
 - **Fix:**
-  - Build the data with the chain tool encode_call and check its echo of the arguments. With `sender`, it also checks the balance.
+  - Build the data with the chain tool encode_call and check its echo of the arguments. With `sender`, it also checks the balance and dry-runs the call from that sender, so a refusal shows before anything is signed.
   - Fund the account's fallback `5...` address before you estimate a call that moves tPOT (E4).
   - Name a module error with the chain tool explain_error, or with `api.registry.findMetaError` (E10).
   - A call that needs root cannot be sent from a `0x` account.
-- **Basis:** Checked on Nov 14, 2026 (all four texts from both `eth_call` and `eth_estimateGas`; `Invalid call: Call` for a value and for missing data, from both as well; the empty account's estimate for `System.remarkWithEvent`). Whether a sent transaction with a value is refused the same way was not tested.
+  - To see an inner error in a dry run, estimate the inner call alone from the account it runs as (for `Proxy.proxy`, the real account's `0x` form; a dry run may name any sender), or wrap it in `Utility.batchAll`. Neither works for `Sudo.sudo`: its inner call runs as Root, no dry run through the pallets address runs as Root, and a root-only call estimated alone answers `BadOrigin`.
+- **Basis:** Checked on Nov 14, 2026 (all four texts from both `eth_call` and `eth_estimateGas`; `Invalid call: Call` for a value and for missing data, from both as well; the empty account's estimate for `System.remarkWithEvent`). Whether a sent transaction with a value is refused the same way was not tested. The 143 dry runs Checked on Nov 15, 2026 (`eth_estimateGas`, and `eth_call` once, at testnet blocks 474727 to 474801, most of them measured twice at two blocks; several of the misleading names, `Utility.batch` and the sudo case once more at blocks 474925 to 474964; `Sudo.sudoAs` twice, later that day). Nothing was sent, so these replies are not confirmed against the events of a sent transaction.
 
 ### E30. eth_subscribe refuses "newHeads" on the WebSocket endpoint
 
@@ -402,3 +423,73 @@ The chain tool explain_error matches a pasted error text against these entries.
 - **Cause:** the block range is not valid: `fromBlock` is after `toBlock`, or `toBlock` is beyond the head. The size of the range is not the cause: `eth_getLogs` has no block-range limit (E6).
 - **Fix:** read the head with `eth_blockNumber` first, keep `toBlock` at or below it (or use `latest`), and keep `fromBlock` at or below `toBlock`. An indexer that runs ahead of the chain meets this when it asks for blocks that do not exist yet.
 - **Basis:** Checked on Nov 14, 2026 (both cases, measured twice; ranges up to the whole chain answered).
+
+### E34. Errors 1040, 1001 or 1002: the node cannot read the bytes as a transaction
+
+- **You see:** the Substrate node refuses the bytes before it checks anything else. As @polkadot/api 17 prints the replies:
+  - from `author_submitExtrinsic`: ``1040: Client error: Could not decode `OpaqueExtrinsic.0`: Not enough data to decode vector``;
+  - from `author_submitAndWatchExtrinsic`, for the same kind of bytes: ``1001: Extrinsic has invalid format: Could not decode `OpaqueExtrinsic.0`: Not enough data to decode vector``;
+  - from both methods: ``1002: Verification Error: Runtime error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed``, then a WASM backtrace that ends in `TaggedTransactionQueue_validate_transaction`.
+  - In the node's own texts, a line break and a tab come before "Not enough data".
+- **Cause:** the bytes are not a transaction this runtime can read.
+  - 1040 and 1001: the length at the start does not fit the bytes. Measured for bytes cut short, for a raw Ethereum transaction (`0x02f8...`) sent to the Substrate node, and, from `author_submitExtrinsic`, for hex with an odd number of digits (`"0x123"`).
+  - 1002: the length fits, but what it covers is not a transaction. Measured for an empty transaction (`0x00`; from `author_submitExtrinsic` only, since the same bytes sent to `author_submitAndWatchExtrinsic` right after got 1012), a length followed by random bytes, the `0x` text of a signed transaction turned into bytes once more, a signed transaction without its length prefix, extra bytes inside the length, and a version byte that is neither `0x84` (signed) nor `0x04` (unsigned): `0x83`, `0x85`, `0x45`, `0x05` and `0xff` tried. The bytes `0x00` sent again got 1012 three times, then 1013 (E12).
+  - Extra bytes after a complete transaction, with its length left as it was, were not noticed: both methods answered as for the transaction alone (1010 "Inability to pay some fees", from an empty account).
+  - The runtime's own check fails the same way: `state_call` of `TaggedTransactionQueue_validate_transaction` with such bytes answers ``4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed``.
+  - `transaction_v1_broadcast` took bytes cut short without an error: it returned an operation id. `transaction_v1_stop` with that id then answered `-32602: Invalid operation id`.
+- **Fix:**
+  - Build the transaction with @polkadot/api connected to the chain (recipe 0), so that it uses the chain's own metadata, and send `tx.toHex()` as it is. A signed transaction starts with its length, then `0x84` (signed, format 4).
+  - Send `0x` hex of whole bytes, and do not turn the hex text into bytes a second time.
+  - Send Ethereum transactions to the Ethereum RPC (`eth_sendRawTransaction`), not to the node (E13).
+  - To check bytes before you send them, ask the runtime's own check directly: `api.rpc.state.call('TaggedTransactionQueue_validate_transaction', '0x02' + hex.slice(2) + at.slice(2), at)`, with `hex` the extrinsic and `at` a recent block hash, and read the answer as the last lines of recipe 2f do. Recipe 2f as it is checks Ethereum transactions only: it wraps its input in `revive.ethTransact`, so for any Substrate bytes it prints `Invalid Call`. A 4003 with a wasm trap means the runtime cannot read the bytes. `{"Err":{"Invalid":...}}` or `{"Err":{"Unknown":...}}` names the check that refuses a transaction it can read.
+  - Do not rely on `transaction_v1_broadcast` to report bad bytes. `author_submitExtrinsic` and `author_submitAndWatchExtrinsic` refuse them.
+- **Basis:** Checked on Nov 15, 2026: refused submissions to the testnet node (blocks 475079 to 475097) of bytes made for the purpose, from random bytes and from transactions signed by new, empty accounts with random keys held only in memory and then changed. Before each, we read the runtime's own check of the same bytes through `state_call`. Each case was sent once to each method, with fresh bytes of the same kind for the second method (for `0x00` the same bytes, since no others exist). Nothing was accepted.
+
+### E35. -32000 "Invalid transaction" (lower-case t) from eth_sendRawTransaction
+
+- **You see:** `eth_sendRawTransaction` answers `{"code":-32000,"message":"Invalid transaction"}`: code -32000, and "transaction" with a lower-case t.
+- **Cause:** the Ethereum RPC could not decode the bytes as an Ethereum transaction that it takes, so it refused them itself. Nothing reached the node's pool. Measured for:
+  - nonsense hex (`0xdeadbeef`) and empty bytes (`0x`);
+  - a signed EIP-1559 transaction with its last 10 bytes cut off;
+  - a Substrate extrinsic, unsigned or signed, sent to the Ethereum RPC;
+  - a legacy (type 0) transaction without a chain id (`v` = 27 or 28, before EIP-155). The node itself does not refuse it for that: its own check of the same transaction went on to the balance check (`Payment`, from an empty account).
+  - It is not E1. The pool's refusal is `{"code":1010,"message":"Invalid Transaction"}`, with code 1010 and a capital T: the RPC decoded the transaction and passed it on, and the node refused it.
+  - Not all bad input gets this text. Hex that is not hex is refused while the parameter is read, with -32602 (E36). A raw transaction without `0x`, and one with an extra `00` byte at the end, were passed on to the node.
+- **Fix:**
+  - Sign for chain id 420420777. A typed transaction (type 2, as in recipe 2c) carries it; a legacy one must use EIP-155.
+  - Send the signed transaction whole, as hex, exactly as the signer returned it (`cast mktx`, `signTransaction` of viem or ethers).
+  - Send a Substrate extrinsic to the node (`author_submitExtrinsic`), not to the Ethereum RPC.
+- **Not known:** what the RPC does with an extra byte after a signed transaction. It passed one on, and the node refused it for the empty account.
+- **Basis:** Checked on Nov 15, 2026: refused submissions to `eth_sendRawTransaction` at testnet blocks 474651 to 474654, signed by new, empty accounts with random keys held only in memory, each measured twice; nonsense hex and the legacy case once more at blocks 474908 to 474910. The node's check of the legacy transaction read through `state_call` (recipe 2f), for a copy signed the same way by another empty key, and once more when we repeated the measurement.
+
+### E36. -32602 "Invalid params": a parameter missing or written wrongly
+
+- **You see:** `{"code":-32602,"message":"Invalid params","data":"..."}` from the Ethereum RPC, or `-32602: Invalid params: ...` from the Substrate node, with one of these texts:
+  - `No more params`
+  - `OddLength`, `InvalidHexCharacter { c: 'z', index: 0 }`, or from the node `invalid hex character: h, at 0`
+  - `hex string without 0x prefix`
+  - from `eth_feeHistory`: ``invalid type: integer `4`, expected a (both 0x-prefixed or not) hex string or byte array containing between (0; 32] bytes``
+  - Some of these texts end with `at line 1 column N`; `No more params` and `OddLength` never did.
+- **Cause:**
+  - `No more params`: a required parameter is missing. `eth_getBalance` needs its block (there is no default), `eth_getBlockByNumber` its second parameter (`true` or `false`), and the node's `author_submitExtrinsic` its extrinsic. `eth_call` without a block is accepted and runs at the head.
+  - `OddLength`, `InvalidHexCharacter`, `invalid hex character`: the value is not hex. An odd number of digits (`"0xabc"`, or `"hello"`), or a character that is not a hex digit (`"0xzzzz"` as a raw transaction, `"0xzz"` as `data`). The bytes were never read as a transaction.
+  - `hex string without 0x prefix`: a block parameter was read as a hex number. An unknown tag such as `"newest"` and a decimal number such as `"100"` both answer this; the text does not name the tag.
+  - `invalid type: integer`: a JSON number where the RPC wants a hex string. `eth_feeHistory` takes its block count only as hex: `["0x4", "latest", [25, 75]]` answers, `[4, "latest", [25, 75]]` does not. A block given as the JSON number `100` answers ``invalid type: integer `100`, expected Block identifier following EIP-1898``.
+  - Other texts of this kind: a `5...` address given to `eth_getBalance`, `invalid length 48, expected a (both 0x-prefixed or not) hex string or byte array containing 20 bytes`; `eth_call` with both `input` and `data`, different, `Both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`; `eth_getLogs` with `blockHash` and `fromBlock`, `cannot specify both blockHash and fromBlock/toBlock, choose one or the other`.
+  - The RPC takes some mistakes without a word: an address without `0x`, a raw transaction without `0x` (passed on to the node), and parameters given as a named object instead of an array.
+- **Fix:**
+  - Give every parameter, in order. Numbers, addresses and data as `0x` hex of whole bytes; a block as `latest`, `pending`, `safe`, `finalized`, `earliest` or a `0x` number.
+  - Give the Ethereum RPC `0x` addresses: convert a `5...` address first (recipe 6, or the chain tool convert_address).
+- **Basis:** Checked on Nov 15, 2026: requests with wrong parameters to `https://test-evm-rpc-v3.portaldot.dev` (testnet blocks 474651 to 474794), most of them measured twice, and to the node's `author_submitExtrinsic` (block 475097).
+
+### E37. "Ethereum block not found" or "Account not found for address" (-32000)
+
+- **You see:** `{"code":-32000,"message":"Ethereum block not found"}`, or `{"code":-32000,"message":"Account not found for address 0x..."}` from `eth_sendTransaction`.
+- **Cause:**
+  - `Ethereum block not found`: `eth_getBalance` or `eth_call` was given a block hash that the Ethereum RPC does not know, as `{"blockHash": ...}` or as a plain 32-byte string. For the same hash, `eth_getBlockByHash` answers `null`. A block number after the head answers `hash not found` instead (E5).
+  - The Ethereum side has its own block hashes. Block 0 is `0x7c05...7001` there and `0xd4f9...` (the genesis hash) on the node; block 389240 is `0xd618...` there and `0xc000...` on the node. We measured the reply with a random hash, not with a Substrate block hash.
+  - `Account not found for address`: `eth_sendTransaction` asks the RPC to sign, and the RPC holds no keys (`eth_accounts` answers `[]`). `eth_sign` and `eth_signTypedData_v4` answer "Method not found" (E28).
+- **Fix:**
+  - Take block hashes from the Ethereum side (`eth_getBlockByNumber`, or a receipt's `blockHash`), or give the block number. The chain tool get_block shows both hashes of a block.
+  - Sign in the wallet or in the script, and send with `eth_sendRawTransaction` (recipe 2c).
+- **Basis:** Checked on Nov 15, 2026: `eth_getBalance`, `eth_call` and `eth_getBlockByHash` with a random block hash, each measured twice; `eth_sendTransaction` from a new, empty account, measured twice; the hashes of blocks 0 and 389240 read on both sides.

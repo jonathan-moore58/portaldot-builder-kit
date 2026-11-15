@@ -1,6 +1,7 @@
 import * as z from 'zod';
 import { codeKind, readReviveAccount, resolveHolder } from '../lib/accounts.ts';
-import { checksummed, parseAddress, toSs58 } from '../lib/address.ts';
+import { checksummed, fallbackIdOfH160, parseAddress, toSs58 } from '../lib/address.ts';
+import { callNames, innerCallNotes } from '../lib/nativedryrun.ts';
 import { callName, decodeCallBytes, depositScale, ethLimits, findCallItem, isPalletsAddress, readEthSide, RUNTIME_PATH_BASIS, specialOriginNote, type EthReading } from '../lib/calls.ts';
 import { getConn, isEthHex } from '../lib/chain.ts';
 import { ToolError } from '../lib/errors.ts';
@@ -124,6 +125,7 @@ export default defineTool({
     let palletsCall: string | null = null;
     let palletsProblem: string | null = null;
     let palletsOrigin: string | null = null;
+    let palletsNotes: string[] = [];
     if (toPallets) {
       if (!hasData) palletsProblem = 'there is no data, so there is no native call to run.';
       else {
@@ -132,6 +134,7 @@ export default defineTool({
           palletsCall = callName(index, call);
           const item = findCallItem(index, call);
           palletsOrigin = item ? specialOriginNote(item) : null;
+          palletsNotes = innerCallNotes(callNames(index, call));
         } catch (err) {
           palletsProblem = err instanceof Error ? err.message : String(err);
         }
@@ -165,9 +168,17 @@ export default defineTool({
         `WARNING: the value, ${valueWei} wei, is not a whole number of native units (1 unit = 10000 wei): it is ${valueWei / NATIVE_TO_WEI} units and ${valueWei % NATIVE_TO_WEI} wei more. ` +
           'The chain keeps native units, plus a remainder below 10000 wei per account; what it does with such a remainder in a transfer was not tested. Send a multiple of 10000 wei.',
       toPallets &&
-        `Note: "to" is the pallets address, so this transaction runs a native call as the sender's fallback account, which pays its fee. Its receipt will show gasUsed 0 and no logs; its result is in the Substrate events of the same block. ` +
-          'This was proven on Nov 13, 2026 with System.remarkWithEvent and Balances.transferKeepAlive; other calls are expected to work the same way but were not tested.',
+        (nativeOwner
+          ? `Note: "to" is the pallets address, so this runs a native call. ` +
+            (holder.linked
+              ? `From the 0x form of a native account, as here, the node runs it as that native account itself, ${nativeOwner}, so the figures below are that account's (checked by dry run on Nov 15, 2026). `
+              : `${nativeOwner} is not linked to its 0x form yet (a native account is linked when it is created), so the node runs the call as that 0x form's fallback account ${toSs58(fallbackIdOfH160(fromH160))}, not as ${nativeOwner}. `) +
+            "Sent from an Ethereum key, such a transaction runs the call as the key's fallback account instead; its receipt shows gasUsed 0 and no logs, and its result is in the Substrate events of the same block. " +
+            'This was proven on Nov 13, 2026 with System.remarkWithEvent and Balances.transferKeepAlive; other calls were dry-run this way on Nov 15, 2026 (143 dry runs of calls across 18 modules), not sent.'
+          : `Note: "to" is the pallets address, so this transaction runs a native call as the sender's fallback account (the 20 bytes followed by twelve 0xEE bytes), which pays its fee. Its receipt will show gasUsed 0 and no logs; its result is in the Substrate events of the same block. ` +
+            'This was proven on Nov 13, 2026 with System.remarkWithEvent and Balances.transferKeepAlive; other calls were dry-run this way on Nov 15, 2026 (143 dry runs of calls across 18 modules), not sent.'),
       palletsProblem && `WARNING: ${palletsProblem}`,
+      ...palletsNotes,
       palletsOrigin && `WARNING: the chain's own notes for ${palletsCall} say: "${palletsOrigin}" A call that needs a special origin (root) cannot work through the pallets address.`,
       toPallets && valueWei > 0n && 'WARNING: a value sent together with a native call is refused: on Nov 14, 2026 eth_estimateGas answered "Invalid call: Call" (code -32000) to every such transaction we tried. Send value 0 and let the call itself move any tokens.',
       !isDeploy && !toPallets && !toRevive?.contract && hasData &&

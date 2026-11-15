@@ -49,7 +49,7 @@ Nobody we know of has checked these on V3. Each line says what to do meanwhile.
 - **Why the testnet stopped twice in Oct 2026, and where halts are announced.** We know of no status page. Meanwhile: watch the head's timestamp (`get_chain_facts`).
 - **The mainnet validator set beyond its 2 validators, and what the Oracle module's single key holds.** Meanwhile: read `session.validators` and the Oracle module's storage yourself before you rely on either.
 - **Fees paid in another asset** through `ChargeAssetTxPayment`. Not tried. Meanwhile: pay fees in tPOT.
-- **Reported, not checked:** Revive has no ed25519 or staking precompile; the native Scheduler refuses signed origins with `BadOrigin`; the Portaldot wallet cannot sign Ethereum transactions. Meanwhile: test each before you design around it.
+- **Reported, not checked:** Revive has no ed25519 or staking precompile; the Portaldot wallet cannot sign Ethereum transactions. Meanwhile: test each before you design around it. (That the native Scheduler refuses a signed account with `BadOrigin` was Checked by dry run on Nov 15, 2026: `errors.md` E24.)
 - **Nfts attribute namespaces.** Upstream code requires `approve_item_attributes` for the "Account" namespace; not tested on V3. Meanwhile: follow the upstream order (`errors.md` E25).
 
 ## Answered on Nov 14, 2026

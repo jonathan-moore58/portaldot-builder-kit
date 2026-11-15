@@ -92,8 +92,10 @@ async function open(network: Network): Promise<Conn> {
     return { network, api, provider, warnings };
   } catch (err) {
     provider?.disconnect().catch(() => undefined);
+    // Only whether a proxy is set: its value may hold a password, so it is never printed.
+    const viaProxy = process.env.NODE_USE_ENV_PROXY === '1' && Boolean(process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy);
     throw new ToolError(
-      `Could not reach the ${network.label} node at ${network.ws} (${messageText(err instanceof Error ? err.message : String(err), 300)}).${network.wsVar ? ` The endpoint comes from ${network.wsVar}.${authNote(network)}` : ''} ` +
+      `Could not reach the ${network.label} node at ${network.ws} (${messageText(err instanceof Error ? err.message : String(err), 300)}).${network.wsVar ? ` The endpoint comes from ${network.wsVar}.${authNote(network)}` : ''}${viaProxy ? ' The server connects through the proxy set in HTTPS_PROXY or HTTP_PROXY (the plugin sets NODE_USE_ENV_PROXY=1): check that proxy, or add the host to NO_PROXY.' : ''} ` +
         'All public Portaldot nodes are run by one operator and the testnet has stopped before, so this is probably not a fault in your code. ' +
         'Try again in a moment. Tools that need no network (convert_amount, and convert_address for the offline rule) still work.',
     );

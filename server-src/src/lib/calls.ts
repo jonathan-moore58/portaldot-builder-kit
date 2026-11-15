@@ -539,7 +539,7 @@ export function specialOriginNote(item: ItemInfo): string | null {
 export const PALLETS_ROUTE_BASIS =
   'Proven on Nov 13, 2026 with System.remarkWithEvent and Balances.transferKeepAlive (testnet blocks 452626 and 452633). ' +
   'The receipt of such a transaction shows gasUsed 0 and no logs; its result is in the Substrate events of the same block. ' +
-  'Other calls are expected to work the same way but were not tested. A call that needs a special origin (root) cannot work this way.';
+  'Other calls were not sent this way; on Nov 15, 2026, 143 dry runs of native calls across 18 modules ran each call as a native call and answered with its result (a gas figure, or "Failed to dispatch call:" and the call\'s own error). A call that needs a special origin (root) cannot work this way.';
 
 /** What the runtime-API path rests on. */
 export const RUNTIME_PATH_BASIS =

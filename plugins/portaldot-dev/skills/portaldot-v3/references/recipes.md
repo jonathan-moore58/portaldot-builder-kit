@@ -19,7 +19,7 @@ Error numbers (E1, E2 and so on) refer to `errors.md`. Each recipe names the cha
 
 - 0. Connect, and check that you are on the right chain
 - 1. Send the native token (tPOT) with @polkadot/api
-- 2. Solidity with Foundry and cast (`recipes-contracts.md`): 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path
+- 2. Solidity with Foundry and cast (`recipes-contracts.md`): 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path, 2f read why the node refuses an Ethereum transaction without sending it
 - 3. Call a contract from a native account, `revive.call` (`recipes-contracts.md`)
 - 4. Call a native module from a `0x` account (`recipes-contracts.md`)
 - 5. Read a transaction's result and events on both sides: 5a an Ethereum transaction, 5b a native extrinsic, 5c contract events, 5d in a browser
@@ -229,8 +229,8 @@ What can go wrong:
 
 - `1010: Invalid Transaction: Inability to pay some fees (e.g. account balance too low)`: the account cannot pay the fee, or does not exist yet (E1).
 - `Balances.InsufficientBalance` (module 6, error 2), or a refused transfer near the minimum: the transfer would take the sender below 0.1 tPOT, or a new account would receive less than 0.1 tPOT (E17, E10).
-- `1012: Transaction is temporarily banned`: the same bytes were sent again soon after a refusal. Fix the cause, then sign again (E1).
-- `Priority is too low` (1014), `Transaction Already Imported` (1013) or `Transaction is outdated` (1010): nonce trouble (E12, recipe 9).
+- `1012: Transaction is temporarily banned`: the same bytes were sent again soon after a refusal. Before you sign again, check that the account's nonce has not passed the transaction's: if it has, the transaction was included, so do not send it again (E12). Otherwise fix the cause, then sign again (E1).
+- `Priority is too low` (1014) or `Transaction is outdated` (1010): nonce trouble (E12, recipe 9). `Transaction Already Imported` (1013): these bytes were sent before; refused bytes sent again get it too, so check that the transaction is pending before you wait (E12).
 - Not final after 10 minutes: the chain may have stopped (E14). Treat the send as pending, not failed, and settle it with recipe 9 before you send again.
 
 Basis: **Assembled**. On Nov 14, 2026 the script ran up to the signing step, with the Treasury `5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z` as the sender for the read-only parts, and `node --check` passed. The sending lines (`transferKeepAlive`, `signAsync` with an explicit nonce, the status callback and the finality wait) are those of our own tools, which sent four transfers this way between Oct 20 and Nov 1, 2026; each was included 4 blocks after the finalized head at signing. Not proven: `transferAllowDeath`, `transferAll`, and signing through a browser extension.
@@ -665,7 +665,7 @@ The rules our tools follow (Experience, from every send since Oct 19, 2026):
 - If a send is not final after 10 minutes, treat it as pending, not failed: the chain may have stopped (E14). Then use step 3: if the nonce was used in a finalized block, look in that block for your hash (recipe 5b); if another extrinsic used the nonce, yours was dropped; if the nonce is still free, your transaction may still be in the pool, or may have been dropped.
 - Check the genesis hash and the chain id before every send (recipe 0).
 
-What can go wrong: `Priority is too low` (1014), `Transaction Already Imported` (1013), `Transaction is outdated` (1010) are the standard Substrate answers for nonce trouble (E12). A reorganisation can make a settled transfer look failed; wait for finality before you decide (E12).
+What can go wrong: `Priority is too low` (1014) and `Transaction is outdated` (1010) are the standard Substrate answers for nonce trouble; `Transaction Already Imported` (1013) also comes for refused bytes sent again, so check the pending count before you wait (E12). A reorganisation can make a settled transfer look failed; wait for finality before you decide (E12).
 
 Basis: **Proven** for the script: it ran on Nov 14, 2026, and the blocks it found hold that account's extrinsics. The rules are Experience. Whether a real send of ours ever needed step 3 is not recorded.
 

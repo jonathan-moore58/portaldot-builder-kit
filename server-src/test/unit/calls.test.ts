@@ -76,7 +76,8 @@ test('apiReason keeps the useful end of a @polkadot/api message', () => {
 
 test('the stated bases are dated and say what was not tested', () => {
   assert.match(PALLETS_ROUTE_BASIS, /Nov 13, 2026/);
-  assert.match(PALLETS_ROUTE_BASIS, /were not tested/);
+  assert.match(PALLETS_ROUTE_BASIS, /were not sent this way/);
+  assert.match(PALLETS_ROUTE_BASIS, /Nov 15, 2026/);
   assert.match(PALLETS_ROUTE_BASIS, /452626 and 452633/);
   assert.match(RUNTIME_PATH_BASIS, /Nov 14, 2026/);
   assert.match(depositScale('tPOT'), /3\.8415 tPOT/);

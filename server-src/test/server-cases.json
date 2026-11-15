@@ -1188,6 +1188,148 @@
     "covers it: yes",
     "counts tPOT only"
    ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": {
+     "code": 1040,
+     "message": "Client error: Could not decode `OpaqueExtrinsic.0`:\n\tNot enough data to decode vector\n"
+    }
+   },
+   "includes": [
+    "Best match in our list: E34"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "1001: Extrinsic has invalid format: Could not decode `OpaqueExtrinsic.0`: Not enough data to fill buffer"
+   },
+   "includes": [
+    "1001",
+    "Best match in our list: E34"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Invalid transaction\"}"
+   },
+   "includes": [
+    "Best match in our list: E35"
+   ],
+   "excludes": [
+    "Best match in our list: E1\n"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":1010,\"message\":\"Invalid Transaction\"}"
+   },
+   "includes": [
+    "Best match in our list: E1\n"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": 1040
+   },
+   "includes": [
+    "1040"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "Failed to dispatch call: Module(ModuleError { index: 47, error: [32, 0, 0, 0], message: Some(\"NoConfig\") })"
+   },
+   "includes": [
+    "Nfts.NoConfig",
+    "Seen in our testnet dry runs of Nov 15, 2026: Nfts.mint, ",
+    "references/native-call-errors.md"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "System.remark",
+    "args": [
+     "0x1234"
+    ],
+    "sender": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "Dry run from this sender",
+    "the chain accepts it"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Assets.transfer",
+    "args": {
+     "id": 4000000000,
+     "target": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+     "amount": "5"
+    },
+    "sender": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "Dry run from this sender",
+    "the chain refuses it: Assets.Unknown",
+    "Failed to dispatch call"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "Utility.batch",
+    "args": [
+     [
+      {
+       "call": "System.remark",
+       "args": [
+        "0x00"
+       ]
+      }
+     ]
+    ],
+    "sender": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"
+   },
+   "includes": [
+    "0x01000400000400",
+    "a dry run reports success for such a call even when the call inside fails"
+   ]
+  },
+  {
+   "tool": "encode_call",
+   "args": {
+    "call": "System.remark",
+    "args": [
+     "0x1234"
+    ],
+    "sender": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z",
+    "network": "mainnet"
+   },
+   "includes": [
+    "Portaldot V3 mainnet",
+    "Dry run from this sender"
+   ]
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "to": "0x6d6f646c70792f70616464720000000000000000",
+    "data": "0x01000400000400"
+   },
+   "includes": [
+    "Utility.batch",
+    "a dry run reports success for such a call even when the call inside fails"
+   ]
   }
  ]
 }

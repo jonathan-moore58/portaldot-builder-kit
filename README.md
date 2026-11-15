@@ -30,7 +30,7 @@ An assistant that answers from Polkadot or Ethereum habits gets these wrong. Thi
 | `get_account` | Balances in both forms, the nonce, and contract details |
 | `convert_amount` | Tokens, native base units and wei, converted exactly |
 | `read_storage` | Any stored value or constant, or a page of a map |
-| `encode_call` | The exact bytes of a call, a fee estimate, and how a `0x` account can send a native call |
+| `encode_call` | The exact bytes of a call, a fee estimate, the chain's own answer to it by dry run when you name a sender, and how a `0x` account can send a native call |
 | `estimate_eth_transaction` | Gas, the real cost in tokens, and whether the node would refuse the transaction |
 | `simulate_contract_call` | A dry run of a contract call: return value, revert reason, limits to pass |
 | `simulate_contract_deploy` | A dry run of a deployment: the address, the deposit, the limits |
@@ -39,7 +39,7 @@ An assistant that answers from Polkadot or Ethereum habits gets these wrong. Thi
 | `get_contract_events` | A contract's events from both sides, including the ones `eth_getLogs` does not serve (at most 50 blocks per call) |
 | `explain_error` | What an error text or code means on this chain, and what to do |
 
-**A knowledge pack.** The skill `portaldot-v3`: the rules that prevent the costly mistakes, proven recipes, a list of errors and traps, and measurements of what the EVM and the Ethereum RPC really do on this chain.
+**A knowledge pack.** The skill `portaldot-v3`: the rules that prevent the costly mistakes, proven recipes, a list of errors and traps, a table of what native calls answer to common mistakes, and measurements of what the EVM and the Ethereum RPC really do on this chain.
 
 **Every fact says how it is known.** *Checked* means we measured it on the chain, with the date. *Experience* means we learned it while building and running our own tools there. *Guide* means it comes from the chain team's testnet guide. *Reported* means other builders said it and we did not check it.
 
@@ -73,7 +73,7 @@ claude --plugin-dir ./plugins/portaldot-dev
 
 - No tool asks for a private key or a secret phrase, and none signs or sends a transaction. The most a tool returns is unsigned call data for you to sign in your own wallet or script.
 - A secret phrase in any argument is refused before anything is sent. A private key cannot be told apart from an account id (both are 0x and 64 hex characters), so never paste one: it would go to the node as a lookup.
-- It connects only to the public Portaldot endpoints, or to the ones you set under Settings, and only when a tool is used. A connection that is idle for five minutes is closed.
+- It connects only to the public Portaldot endpoints, or to the ones you set under Settings, and only when a tool is used; when `HTTPS_PROXY` or `HTTP_PROXY` is set, it reaches them through that proxy (see Cloud sessions and proxies). A connection that is idle for five minutes is closed.
 - The addresses, call data and bytecode you ask about are sent to those public nodes. Nothing is sent to us. There is no telemetry.
 - It writes no files. One tool, `simulate_contract_deploy`, can read a build artifact that you name.
 
@@ -89,6 +89,16 @@ The server works without any. These environment variables change its endpoints:
 
 The server compares the genesis hash of the node it reaches with the recorded one, and warns when they differ.
 
+### Cloud sessions and proxies
+
+A cloud session (Claude Code on the web) reaches only the hosts its environment's network settings allow. Unless the environment allows every host, add these three to its allowed hosts; otherwise the chain tools cannot connect (we have not yet run the plugin inside a cloud session):
+
+- `test-node-v3.portaldot.dev`
+- `test-evm-rpc-v3.portaldot.dev`
+- `live-v3-node.portaldot.dev`
+
+Behind a proxy the server follows `HTTPS_PROXY` and `HTTP_PROXY`, and by Node.js's rules `NO_PROXY`, through the proxy support built into Node.js (the plugin sets `NODE_USE_ENV_PROXY=1` for its server). We checked `HTTPS_PROXY` with a local proxy on Node.js 24.12 on Nov 15, 2026: with the setting, the node and the Ethereum RPC were reached through the proxy, and without it they were not. `NO_PROXY` and a cloud session itself were not tested. A Node.js version without that support ignores the setting. With `NODE_OPTIONS=--no-experimental-websocket` the WebSocket to the node does not use the proxy.
+
 ## Develop
 
 ```
@@ -101,7 +111,7 @@ npm run build          # writes plugins/portaldot-dev/server/index.mjs and its t
 npm run test:server    # the built server, over stdio
 ```
 
-- `node scripts/gen-knowledge.mjs` rebuilds the error list inside the server from `plugins/portaldot-dev/skills/portaldot-v3/references/errors.md`.
+- `node scripts/gen-knowledge.mjs` rebuilds the error list and the table of native-call replies inside the server from `references/errors.md` and `references/native-call-errors.md` (in `plugins/portaldot-dev/skills/portaldot-v3/`).
 - `node scripts/gen-metadata.mjs` saves the chains' runtime metadata into the source, so a session does not download it. It needs both networks to be reachable and stamps the day it ran. Run it after a runtime upgrade. Until then the server downloads the new metadata by itself: it is slower to start, and it still reads the new runtime.
 - `node scripts/call.ts <tool> '<json>'` runs one tool from source.
 - `third-party-licences/` holds the licence texts that cannot be read from `node_modules`: packages that arrive inside another package's build files, and one that ships no licence file. The build stops when a text is missing.
@@ -112,9 +122,9 @@ The built server is one file with no dependencies to install. Node.js 24 runs th
 
 Numbers from November 15, 2026, on Node.js 24 and Windows:
 
-- 170 unit tests, with no network.
-- 117 live tests, which read the testnet and the mainnet.
-- 136 checks of the built server over stdio, in both protocol modes of the MCP client.
+- 184 unit tests, with no network.
+- 126 live tests, which read the testnet and the mainnet.
+- 147 checks of the built server over stdio, in both protocol modes of the MCP client.
 - A copy without `node_modules` builds to the same file, byte for byte.
 - 12 developer questions, each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web). With the plugin 24 of 24 answers were right; without it 16 of 24. The questions and their graders are in `plugins/portaldot-dev/evals/`. This repeats the run: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
 
@@ -127,7 +137,7 @@ Two limits to know:
 
 ## Status
 
-Version 0.1.0, November 2026. It supports Claude Code, checked on version 2.1.325; much older versions reject the plugin's manifest. Other assistants may follow.
+Version 0.2.0, November 2026. It supports Claude Code, checked on version 2.1.325; much older versions reject the plugin's manifest. Other assistants may follow.
 
 The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-builder-kit/issues.
 

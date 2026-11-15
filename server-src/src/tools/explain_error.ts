@@ -15,6 +15,7 @@ import { ToolError } from '../lib/errors.ts';
 import { CUSTOM_BY_SELECTOR, decodeRevert, readCustomArgs } from '../lib/evm.ts';
 import { lines } from '../lib/format.ts';
 import { getIndex, normName } from '../lib/meta.ts';
+import { measuredFor } from '../lib/mistakes.ts';
 import { pickNetwork, type Network, type NetworkKey } from '../lib/networks.ts';
 import { holdsRecoveryPhrase } from '../lib/secrets.ts';
 import { defineTool, networkField } from '../lib/tool.ts';
@@ -35,6 +36,7 @@ const FULL_SCORE = 6;
 const SUBSTRATE = 'standard Substrate meaning, not measured by us on this chain';
 const JSONRPC = 'standard JSON-RPC 2.0 meaning';
 const MEASURED = 'measured on this chain on Nov 14, 2026';
+const MEASURED_15 = 'measured on this chain on Nov 15, 2026';
 
 /* ---------- 1. the entries of errors.md: patterns over the lower-cased text ---------- */
 
@@ -45,6 +47,14 @@ const code = (n: number): RegExp => new RegExp(`(?:\\bcode\\W{0,4}${n}\\b|\\berr
 const either = (...res: RegExp[]): RegExp => new RegExp(res.map((r) => r.source).join('|'));
 
 /**
+ * The texts are compared in lower case, so the Ethereum RPC's own refusal {"code":-32000,"message":"Invalid transaction"}
+ * (E35) and the pool's {"code":1010,"message":"Invalid Transaction"} (E1) are told apart by their codes.
+ */
+const RPC_OWN_INVALID = /^(?![\s\S]*\b1010\b)[\s\S]*(?:-32000\b[\s\S]{0,80}invalid transaction|invalid transaction[\s\S]{0,80}-32000\b)/;
+/** "invalid transaction" in a text without the code -32000: the pool's refusal, or a text with no code at all. */
+const POOL_INVALID = /^(?![\s\S]*-32000\b)[\s\S]*invalid transaction/;
+
+/**
  * For every entry of errors.md, the texts that point to it, each with a weight: 10 for an exact error
  * text or name that only this entry explains, down to 3 for a loose hint. The best entry is the one
  * with the highest weight; further matches raise it a little.
@@ -53,7 +63,9 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
   E1: [
     [/inability to pay some fees/, 10],
     [either(code(1010), /\b1010\b.{0,20}invalid transaction/), 9],
-    [/invalid transaction/, 8],
+    [POOL_INVALID, 8],
+    [/transaction call is not expected/, 7],
+    [/refused: invalid (?:payment|call)\b|\{\s*"err"\s*:\s*\{\s*"invalid"\s*:/, 8],
     [/transaction has a bad signature|\bbad ?proof\b/, 9],
     [/ancient birth ?block|ancientbirthblock/, 9],
     [/insufficient funds for gas/, 8],
@@ -88,7 +100,9 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/state already discarded/, 10],
     [/\bhash not found\b/, 7],
     [/(?:state|block).{0,30}(?:pruned|discarded)/, 6],
+    [/eth_getblockby(?:number|hash).{0,80}\bnull\b/, 6],
     [/unknown block/, 5],
+    [/ethereum block not found/, 5],
   ],
   E6: [
     [/eth_getlogs.{0,80}(?:\[\]|empty|nothing|no logs|missing|not (?:return|show|serve))|(?:empty|no|missing) logs.{0,60}eth_getlogs/, 10],
@@ -135,6 +149,8 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
   E12: [
     [either(/priority is too low/, code(1014)), 10],
     [either(/(?:transaction )?already imported/, code(1013)), 10],
+    [/nounsignedvalidator/, 8],
+    [either(/unknown transaction validity/, code(1011)), 4],
     [/transaction is outdated|\boutdated\b/, 9],
     [/nonce too (?:low|high)|invalid nonce|nonce (?:mismatch|is wrong|already used)/, 9],
     [/will be valid in the future|not accepting future transactions/, 8],
@@ -204,7 +220,7 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/\beperm\b|\bebusy\b|\beacces\b/, 8],
     [/command line is too long|argument list too long|\be2big\b|filename or extension is too long/, 9],
     [/process\.exit/, 6],
-    [/(?:wasm|webassembly).{0,40}abort|abort.{0,40}(?:wasm|webassembly)/, 6],
+    [/(?:wasm|webassembly).{0,40}abort|abort(?!ed due to trap).{0,40}(?:wasm|webassembly)/, 6],
     [/(?:\.env\b|eth_rpc_url|eth_from).{0,60}(?:foundry|forge|cast)|(?:foundry|forge|cast).{0,60}(?:\.env\b|eth_rpc_url|eth_from)/, 6],
   ],
   E23: [
@@ -271,6 +287,36 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/failed to filter logs/, 10],
     [/fromblock.{0,40}(?:after|greater than|later than|>|above).{0,20}toblock|toblock.{0,40}(?:beyond|after|past|above).{0,20}(?:the )?(?:head|latest)/, 7],
   ],
+  E34: [
+    [/could not decode `?opaqueextrinsic/, 10],
+    [/client error: could not decode/, 10],
+    [/extrinsic has invalid format/, 9],
+    [/verification error: runtime error|execution aborted due to trap|wasm `?unreachable`? instruction executed/, 9],
+    [/\b1002\W{1,4}verification error/, 8],
+    // a code or the words alone also come in texts that are not about transaction bytes: related, not the answer
+    [either(code(1040), code(1001), code(1002), /verification error/), 4],
+    [/not enough data to decode vector/, 8],
+    [/transaction_v1_broadcast|invalid operation id/, 5],
+  ],
+  E35: [
+    [RPC_OWN_INVALID, 10],
+    [/(?:legacy|type 0|pre-?eip-?155).{0,60}(?:without|no) (?:a )?chain ?id|(?:without|no) (?:a )?chain ?id.{0,60}(?:legacy|type 0)/, 6],
+    [/eth_sendrawtransaction.{0,80}-32000|-32000.{0,80}eth_sendrawtransaction/, 4],
+  ],
+  E36: [
+    [/no more params/, 10],
+    [/hex string without 0x prefix/, 10],
+    [/\boddlength\b|invalidhexcharacter|invalid hex character/, 9],
+    [/invalid type: integer `?\d+`?, expected/, 8],
+    [/expected block identifier following eip-1898|both \\?"data\\?" and \\?"input\\?" are set|cannot specify both blockhash and fromblock/, 8],
+    [/invalid length \d+, expected a \(both 0x-prefixed or not\) hex string/, 7],
+  ],
+  E37: [
+    [/ethereum block not found/, 10],
+    [/account not found for address/, 10],
+    [/eth_sendtransaction/, 4],
+    [/eth_accounts\W{1,8}\[\s*\]/, 4],
+  ],
 };
 
 export interface EntryMatch {
@@ -332,12 +378,12 @@ const wordKindRe = (name: string, family: string): RegExp =>
 
 export const STANDARD: Standard[] = [
   // the transaction pool (Substrate RPC author_submitExtrinsic, and the Ethereum RPC's eth_sendRawTransaction)
-  { label: '1001 Extrinsic has invalid format', meaning: 'the submitted bytes are not a transaction this runtime can decode, for example built for another chain or runtime version.', basis: SUBSTRATE, re: either(code(1001), /extrinsic has invalid format/) },
-  { label: '1002 Verification Error', meaning: 'the runtime could not check the transaction; the text after it gives the reason.', basis: SUBSTRATE, re: either(code(1002), /verification error/) },
-  { label: '1010 Invalid Transaction', meaning: 'the transaction pool refused the transaction: it failed a validity check before it ran, so it used no nonce and paid no fee. On the Substrate RPC the reason follows the text; the Ethereum RPC gives none.', basis: `${MEASURED} on both RPCs, see E1`, re: either(code(1010), /invalid transaction/) },
-  { label: '1011 Unknown Transaction Validity', meaning: 'the node could not decide whether the transaction is valid, for example because it could not look up data it needs.', basis: SUBSTRATE, re: either(code(1011), /unknown transaction validity/) },
-  { label: '1012 Transaction is temporarily banned', meaning: 'the pool saw these exact bytes a moment ago (refused or already included) and refuses them again for a while. Fix the cause and sign again.', basis: `${MEASURED} for a native extrinsic sent twice, see E1`, re: either(code(1012), /temporarily banned/) },
-  { label: '1013 Transaction Already Imported', meaning: 'this exact transaction is already in the pool. Wait for it instead of sending it again.', basis: SUBSTRATE, re: either(code(1013), /already imported/) },
+  { label: '1001 Extrinsic has invalid format', meaning: 'the node could not read the bytes as a transaction: their length does not fit them, for example bytes cut short or a raw Ethereum transaction sent to the Substrate node. author_submitAndWatchExtrinsic answers so; author_submitExtrinsic answers 1040 for the same kind of bytes. See E34', basis: MEASURED_15, re: either(code(1001), /extrinsic has invalid format/) },
+  { label: '1002 Verification Error', meaning: 'the runtime could not check the transaction; the text after it gives the reason. With "Runtime error: ... wasm trap", the length fits but what it covers is not a transaction this runtime reads: empty, random bytes, hex text turned into bytes once more, no length prefix, extra bytes inside the length, or a version byte that is neither 0x84 (signed) nor 0x04 (unsigned): 0x83, 0x85, 0x45, 0x05 and 0xff were tried. See E34', basis: `${MEASURED_15} on both submit methods`, re: either(code(1002), /verification error/) },
+  { label: '1010 Invalid Transaction', meaning: 'the transaction pool refused the transaction: it failed a validity check before it ran, so it used no nonce and paid no fee. On the Substrate RPC the reason follows the text; the Ethereum RPC gives none (recipe 2f reads it without sending).', basis: `${MEASURED} on both RPCs, see E1`, re: either(code(1010), POOL_INVALID) },
+  { label: '1011 Unknown Transaction Validity', meaning: 'the node could not decide whether the transaction is valid, for example because it could not look up data it needs. With "NoUnsignedValidator": the call was sent unsigned, and the runtime has no check that takes it unsigned (an unsigned Balances.transferKeepAlive answered so). Sign it. See E12', basis: `${MEASURED_15} for "NoUnsignedValidator"; the other reasons: ${SUBSTRATE}`, re: either(code(1011), /unknown transaction validity/) },
+  { label: '1012 Transaction is temporarily banned', meaning: 'the pool saw these exact bytes a moment ago (refused or already included) and refuses them again for a while. On this chain the same refused bytes sent again got it from 0.6 s to about 37 s later, the longest we waited, while nothing was pending; a resend within a second can get 1013 instead. Before you sign again, check whether the account\'s nonce has passed the transaction\'s: if it has, the transaction was included; do not send it again (E12).', basis: `${MEASURED} for a native extrinsic sent twice, and on Nov 15, 2026 for Ethereum transactions, see E1`, re: either(code(1012), /temporarily banned/) },
+  { label: '1013 Transaction Already Imported', meaning: 'the pool already knows these exact bytes. On this chain it also came for refused bytes sent again within about 2 s, while nothing was pending, so it does not prove that a transaction is waiting: check the "pending" nonce or author_pendingExtrinsics before you wait. See E12', basis: `${MEASURED_15} for refused bytes sent again; for a transaction that is pending: ${SUBSTRATE}`, re: either(code(1013), /already imported/) },
   { label: '1014 Priority is too low', meaning: 'a transaction from the same account with the same nonce is already in the pool, and the new one does not pay enough more to replace it. Wait for the first one, or replace it with a higher tip.', basis: SUBSTRATE, re: either(code(1014), /priority is too low/) },
   { label: '1015 Cycle Detected', meaning: 'the transaction would depend on itself through the tags the pool orders transactions by. Rare; check the nonce.', basis: SUBSTRATE, re: either(code(1015), /cycle detected/) },
   { label: '1016 Immediately Dropped', meaning: 'the pool is full, so the transaction could not enter it. Try again later.', basis: SUBSTRATE, re: either(code(1016), /immediately dropped/) },
@@ -346,22 +392,23 @@ export const STANDARD: Standard[] = [
   { label: '1020 Invalid block id', meaning: 'the block the transaction was to be checked against is not known to the node.', basis: SUBSTRATE, re: either(code(1020), /provided block id is not valid/) },
   { label: '1021 Future transaction refused', meaning: 'the pool does not take transactions that only become valid later (a nonce above the next one). Send the missing nonces first.', basis: SUBSTRATE, re: either(code(1021), /not accepting future transactions/) },
   { label: '1017', meaning: 'a transaction-pool code whose meaning we are not sure of. Read the text that came with it.', basis: SUBSTRATE, re: code(1017) },
+  { label: '1040 Client error', meaning: 'an error of the node itself. With "Could not decode `OpaqueExtrinsic.0`": author_submitExtrinsic could not read the bytes as a transaction, because their length does not fit them (bytes cut short, a raw Ethereum transaction sent to the Substrate node, or hex with an odd number of digits). See E34', basis: MEASURED_15, re: either(code(1040), /client error: could not decode/) },
 
   // InvalidTransaction reasons: the text after "1010: Invalid Transaction:"
   { label: 'InvalidTransaction Payment', meaning: 'the account cannot pay the fee, or does not exist yet. Fund it (at least the fee plus the 0.1 existential deposit).', basis: `${MEASURED}: "Inability to pay some fees (e.g. account balance too low)"`, re: /inability to pay some fees|invalid(?:transaction)?\W{1,4}payment\b|\{\s*"?payment"?\s*:\s*null\s*\}/ },
   { label: 'InvalidTransaction BadProof', meaning: 'the signature does not check: the wrong key, a payload signed for another chain or runtime version, or a mortal transaction sent after its validity period.', basis: `${MEASURED}: "Transaction has a bad signature"`, re: /transaction has a bad signature|invalid(?:transaction)?\W{1,4}bad ?proof|\bbadproof\b/ },
   { label: 'InvalidTransaction Stale', meaning: 'the nonce was already used. Read the account nonce again and sign with the next one.', basis: `${SUBSTRATE} ("Transaction is outdated")`, re: /transaction is outdated|invalid(?:transaction)?\W{1,4}stale\b/ },
   { label: 'InvalidTransaction Future', meaning: 'the nonce is higher than the account\'s next nonce, so the transaction waits until the missing ones arrive.', basis: `${SUBSTRATE} ("Transaction will be valid in the future")`, re: /will be valid in the future|invalid(?:transaction)?\W{1,4}future\b/ },
-  { label: 'InvalidTransaction AncientBirthBlock', meaning: 'a mortal transaction names a birth block older than the 2400 block hashes the chain keeps (System.blockHashCount, read on Nov 14, 2026). Sign it again against a recent block.', basis: `${SUBSTRATE} ("Transaction has an ancient birth block")`, re: /ancient birth ?block|ancientbirthblock/ },
+  { label: 'InvalidTransaction AncientBirthBlock', meaning: 'a mortal transaction names a birth block older than the 2400 block hashes the chain keeps (System.blockHashCount, read on Nov 14, 2026). Sign it again against a recent block.', basis: `${MEASURED_15}: "Transaction has an ancient birth block", for a mortal transaction born 3000 blocks back, see E1`, re: /ancient birth ?block|ancientbirthblock/ },
   { label: 'InvalidTransaction ExhaustsResources', meaning: 'the transaction is too heavy or too large for a block, or the block is full. Try again, or split the work.', basis: `${SUBSTRATE} ("Transaction would exhaust the block limits")`, re: /would exhaust the block limits|exhaustsresources/ },
-  { label: 'InvalidTransaction Call', meaning: 'the call is not allowed in this transaction, for example a call that may not be sent as a signed transaction.', basis: `${SUBSTRATE} ("Transaction call is not expected")`, re: /transaction call is not expected|invalidtransaction\W{1,4}call\b/ },
+  { label: 'InvalidTransaction Call', meaning: 'the call is not allowed in this transaction, for example an ordinary call sent unsigned. Behind a bare 1010 from the Ethereum RPC, it is the node\'s reason for a transaction signed for another chain id, a blob (type 3) or a set-code (type 4) transaction.', basis: `${MEASURED_15}: "Transaction call is not expected" for an unsigned System.remark, and the node's check of those Ethereum transactions, see E1`, re: /transaction call is not expected|invalidtransaction\W{1,4}call\b|invalid(?:"\s*:\s*"|\s+)call\b(?!\s*:)/ },
   { label: 'InvalidTransaction BadSigner', meaning: 'the signer is not allowed to send this transaction.', basis: `${SUBSTRATE} ("Invalid signing address")`, re: /invalid signing address|\bbadsigner\b/ },
   { label: 'InvalidTransaction Custom', meaning: 'a check specific to this chain refused it; the number after Custom says which. We do not know the meaning of this chain\'s custom codes.', basis: `${SUBSTRATE} ("InvalidTransaction custom error")`, re: /invalidtransaction custom error|invalid(?:transaction)?\W{1,4}custom\b/ },
   { label: 'InvalidTransaction BadMandatory or MandatoryValidation', meaning: 'an internal check on the calls the block author adds itself. An ordinary transaction does not meet it.', basis: SUBSTRATE, re: /labelled as mandatory|dispatch is mandatory|badmandatory|mandatoryvalidation/ },
   { label: 'UnknownTransaction', meaning: 'the node could not look up what it needs to check the transaction, or no check exists for an unsigned one.', basis: SUBSTRATE, re: /could not lookup information required to validate|could not find an unsigned validator|unknowntransaction/ },
 
   // DispatchError: why a call that ran failed (in events, dry runs and "Failed to dispatch call: ...")
-  { label: 'DispatchError BadOrigin', meaning: 'the call was made by an origin it does not accept: for example a signed account where the call needs root, or another account than the one allowed.', basis: `${SUBSTRATE}. ${MEASURED}: "Failed to dispatch call: BadOrigin" for Balances.forceTransfer through the pallets address, see E29`, re: /\bbad ?origin\b/ },
+  { label: 'DispatchError BadOrigin', meaning: 'the call was made by an origin it does not accept: for example a signed account where the call needs root, or another account than the one allowed.', basis: `${MEASURED} and ${MEASURED_15.replace('measured on this chain on ', '')} by dry run through the pallets address, see E29`, re: /\bbad ?origin\b/ },
   { label: 'DispatchError CannotLookup', meaning: 'an account or other data the call names could not be found, for example an address the chain cannot look up.', basis: SUBSTRATE, re: kindRe('CannotLookup') },
   { label: 'DispatchError ConsumerRemaining', meaning: 'the account still has something that depends on it (a consumer reference), so it cannot be removed.', basis: SUBSTRATE, re: kindRe('ConsumerRemaining') },
   { label: 'DispatchError NoProviders', meaning: 'the account has nothing that keeps it alive (no provider reference), so it cannot be created this way. Give it a balance first.', basis: SUBSTRATE, re: kindRe('NoProviders') },
@@ -371,15 +418,15 @@ export const STANDARD: Standard[] = [
   { label: 'DispatchError Corruption', meaning: 'the chain state is corrupt; this does not fix itself.', basis: SUBSTRATE, re: wordKindRe('Corruption', 'dispatcherror') },
   { label: 'DispatchError Unavailable', meaning: 'a resource (for example a preimage) is not available now; it may be later.', basis: SUBSTRATE, re: wordKindRe('Unavailable', 'dispatcherror') },
   { label: 'DispatchError Other', meaning: 'an error with only a text; read the text that came with it.', basis: SUBSTRATE, re: /dispatcherror\W{0,4}other\b|\{\s*"other"\s*:/ },
-  { label: 'Token(FundsUnavailable)', meaning: 'the account does not have the funds the call wants to move or hold.', basis: `${SUBSTRATE}. ${MEASURED}: "Failed to dispatch call: Token(FundsUnavailable)" for a transfer from an account with no balance, see E29`, re: tokenRe('FundsUnavailable') },
+  { label: 'Token(FundsUnavailable)', meaning: 'the account does not have the funds the call wants to move or hold.', basis: `${MEASURED} and ${MEASURED_15.replace('measured on this chain on ', '')} by dry run through the pallets address, see E29`, re: tokenRe('FundsUnavailable') },
   { label: 'Token(OnlyProvider)', meaning: 'that part of the balance is what keeps the account alive, so it cannot be moved.', basis: SUBSTRATE, re: tokenRe('OnlyProvider') },
-  { label: 'Token(BelowMinimum)', meaning: 'the account would hold less than the minimum, so it cannot exist with that amount. For tPOT the minimum is the 0.1 existential deposit; for an Assets token it is the minBalance of that asset (read_storage Assets.asset shows it), counted in the smallest unit of that token.', basis: SUBSTRATE, re: variantRe('token', 'BelowMinimum') },
-  { label: 'Token(CannotCreate)', meaning: 'the account cannot be created.', basis: SUBSTRATE, re: variantRe('token', 'CannotCreate') },
+  { label: 'Token(BelowMinimum)', meaning: 'the account would hold less than the minimum, so it cannot exist with that amount. For tPOT the minimum is the 0.1 existential deposit; for an Assets token it is the minBalance of that asset (read_storage Assets.asset shows it), counted in the smallest unit of that token. Assets.mint below the minimum answers it before a missing issuer role.', basis: `${MEASURED_15} by dry run through the pallets address: 0.01 tPOT to a new account, and amounts of an Assets token below its minimum`, re: variantRe('token', 'BelowMinimum') },
+  { label: 'Token(CannotCreate)', meaning: 'the call would create an account that cannot be created this way: measured for an Assets token that is not sufficient, sent to an account that holds no tPOT. Give the recipient at least the 0.1 tPOT existential deposit first: a Utility.batchAll of that payment and then the same asset transfer was accepted in a dry run.', basis: `${MEASURED_15} by dry run through the pallets address`, re: variantRe('token', 'CannotCreate') },
   { label: 'Token(UnknownAsset)', meaning: 'the asset is not known: check the asset id.', basis: SUBSTRATE, re: tokenRe('UnknownAsset') },
   { label: 'Token(Frozen)', meaning: 'the funds exist but are frozen.', basis: SUBSTRATE, re: variantRe('token', 'Frozen') },
   { label: 'Token(Unsupported)', meaning: 'the asset does not support this operation.', basis: SUBSTRATE, re: variantRe('token', 'Unsupported') },
   { label: 'Token(CannotCreateHold)', meaning: 'an account cannot be created only to hold a balance.', basis: SUBSTRATE, re: tokenRe('CannotCreateHold') },
-  { label: 'Token(NotExpendable)', meaning: 'the withdrawal would take funds the account must keep, usually because it would go below the existential deposit (0.1 for tPOT) while the call keeps the account alive. Leave at least that much on it.', basis: SUBSTRATE, re: tokenRe('NotExpendable') },
+  { label: 'Token(NotExpendable)', meaning: 'the withdrawal would take funds the account must keep, usually because it would go below the existential deposit (0.1 for tPOT) while the call keeps the account alive. Leave at least that much on it. From an account with no balance, a swap with keepAlive true answered it too (with keepAlive false, FundsUnavailable): there, fund the account.', basis: `${MEASURED_15} by dry run through the pallets address: Balances.transferKeepAlive, and AssetConversion.swapExactTokensForTokens from an empty account`, re: tokenRe('NotExpendable') },
   { label: 'Token(Blocked)', meaning: 'the account cannot receive this asset.', basis: SUBSTRATE, re: variantRe('token', 'Blocked') },
   { label: 'Arithmetic(Underflow)', meaning: 'a number would go below zero, for example a balance smaller than the amount taken from it.', basis: SUBSTRATE, re: variantRe('arithmetic', 'Underflow') },
   { label: 'Arithmetic(Overflow)', meaning: 'a number would go above its largest value.', basis: SUBSTRATE, re: variantRe('arithmetic', 'Overflow') },
@@ -391,7 +438,16 @@ export const STANDARD: Standard[] = [
   { label: 'JSON-RPC -32600 Invalid Request', meaning: 'the JSON is not a valid JSON-RPC request (for example no "jsonrpc": "2.0" or no method).', basis: JSONRPC, re: /-32600\b|\binvalid request\b/ },
   { label: 'JSON-RPC -32602 Invalid params', meaning: 'a parameter has the wrong form or count; the data field says which, for example "invalid length 4, expected ... 20 bytes" for a short address.', basis: `${JSONRPC}; ${MEASURED}`, re: /-32602\b|\binvalid params\b/ },
   { label: 'JSON-RPC -32603 Internal error', meaning: 'the server failed while handling the request. Try again; if it persists, the request may hit a fault in the node.', basis: JSONRPC, re: /-32603\b|\binternal error\b/ },
-  { label: 'JSON-RPC -32000 Server error', meaning: 'a refusal defined by the node, explained by its message. On this chain\'s Ethereum RPC it carries, for example, "insufficient funds for gas * price + value", "Invalid call: Payment", "Failed to dispatch call: ..." and "hash not found".', basis: `${JSONRPC}; the messages ${MEASURED}`, re: /-32000\b/ },
+  { label: 'JSON-RPC -32000 Server error', meaning: 'a refusal defined by the node, explained by its message. On this chain\'s Ethereum RPC it carries, for example, "insufficient funds for gas * price + value", "Invalid call: Payment", "Failed to dispatch call: ...", "hash not found", "Ethereum block not found", "Account not found for address" and "Invalid transaction" (lower-case t, E35).', basis: `${JSONRPC}; the messages measured on this chain on Nov 14 and 15, 2026`, re: /-32000\b/ },
+
+  // the texts of wrong parameters and of the Ethereum RPC's own refusals (E35 to E37)
+  { label: 'Invalid params: No more params', meaning: 'a required parameter is missing: for example the block of eth_getBalance (it has no default), the boolean of eth_getBlockByNumber, or the extrinsic of author_submitExtrinsic. See E36', basis: `${MEASURED_15} on both RPCs`, re: /no more params/ },
+  { label: 'Invalid params: bad hex (OddLength, InvalidHexCharacter)', meaning: 'the value is not hex of whole bytes: an odd number of hex digits, or a character that is not a hex digit. See E36', basis: `${MEASURED_15} on both RPCs`, re: /\boddlength\b|invalidhexcharacter|invalid hex character/ },
+  { label: 'Invalid params: hex string without 0x prefix', meaning: 'a block parameter was read as a hex number: an unknown tag such as "newest", or a decimal number such as "100". Use latest, pending, safe, finalized, earliest or a 0x number. See E36', basis: MEASURED_15, re: /hex string without 0x prefix/ },
+  { label: 'Invalid params: invalid type: integer', meaning: 'a JSON number where the RPC wants a hex string: for example eth_feeHistory\'s block count ("0x4", not 4) or a block number. See E36', basis: MEASURED_15, re: /invalid type: integer/ },
+  { label: '-32000 Ethereum block not found', meaning: 'the Ethereum RPC does not know that block hash. Use the hash the Ethereum side gives (eth_getBlockByNumber, a receipt\'s blockHash) or the block number. See E37', basis: MEASURED_15, re: /ethereum block not found/ },
+  { label: '-32000 Account not found for address', meaning: 'eth_sendTransaction asks the RPC to sign, and the RPC holds no keys (eth_accounts is []). Sign in the wallet or the script, and send with eth_sendRawTransaction. See E37', basis: MEASURED_15, re: /account not found for address/ },
+  { label: '-32000 Invalid transaction (the Ethereum RPC\'s own refusal)', meaning: 'eth_sendRawTransaction could not decode the bytes as an Ethereum transaction it takes, so it refused them itself, and nothing reached the pool: malformed or cut-off bytes, a Substrate extrinsic, or a legacy transaction without a chain id. It is not the pool\'s 1010 "Invalid Transaction". See E35', basis: MEASURED_15, re: RPC_OWN_INVALID },
 ];
 
 export function standardMatches(text: string): Standard[] {
@@ -686,17 +742,21 @@ const NEXT: Record<string, string> = {
   E26: 'simulate_contract_call runs the call as a dry run and decodes the revert.',
   E27: 'estimate_eth_transaction gives the gas limit and fees to use.',
   E28: 'get_chain_facts lists the endpoints and what each one serves.',
-  E29: 'encode_call shows what the call bytes decode to and, with "sender", checks the balance.',
+  E29: 'encode_call with "sender" dry-runs the call from that sender and names the chain\'s refusal, besides the fee and the balance.',
   E30: 'get_chain_facts lists the endpoints, the wss:// one of the Ethereum RPC included.',
   E31: 'simulate_contract_call runs the call as a dry run through the node; references/evm-checks.md lists the opcodes and precompiles that work.',
   E32: 'simulate_contract_call shows the weight a call needs.',
   E33: 'get_chain_facts shows the newest block; get_contract_events reads a contract\'s events block by block.',
+  E34: 'encode_call builds the bytes of a call from the chain\'s own metadata and echoes what they decode to; E34\'s fix shows how to ask the runtime about extrinsic bytes before you send them (recipe 2f checks Ethereum transactions only).',
+  E35: 'estimate_eth_transaction gives the fields of a type-2 transaction for chain id 420420777 to sign. Recipe 2f does not help here: the RPC refused the bytes before the node saw them, and the node\'s check answers Call for malformed bytes and Payment for a legacy transaction without a chain id.',
+  E36: 'get_block reads a block by its number or by either of its hashes; convert_address turns a 5... address into its 0x form.',
+  E37: 'get_block shows both hashes of a block (the node\'s and the Ethereum side\'s) and turns either into the block.',
 };
 
 const UNDERSTANDS = [
   'module errors as numbers or names: {"index":80,"error":"0x18000000"}, Module { index: 6, error: [2, 0, 0, 0] }, "module 6 error 2", "6.2", "Balances.InsufficientBalance" or "InsufficientBalance"',
   'Solidity revert data (0x08c379a0..., 0x4e487b71..., or a custom error)',
-  'transaction-pool codes 1010 to 1021 and their reasons, DispatchError kinds such as BadOrigin or Token(FundsUnavailable), and JSON-RPC codes such as -32000 and -32601',
+  'transaction codes 1001 to 1040 and their reasons, DispatchError kinds such as BadOrigin or Token(FundsUnavailable), and JSON-RPC codes such as -32000, -32601 and -32602 with their measured texts',
   `the error texts and symptoms of the Bridge Zero team's list of errors and traps (E1 to E${ERROR_ENTRIES.length}); give an id such as "E7" to read one entry, or "list" for all titles`,
 ];
 
@@ -708,13 +768,29 @@ function fullEntry(e: ErrorEntry): string[] {
   return [`${e.id}. ${e.title}`, ...e.body.split('\n')];
 }
 
+/** At most this many measured cases are shown under one named error. */
+const MAX_SEEN = 4;
+/** What E29 says in one line, when a "Failed to dispatch call" text names its error and the error comes first. */
+const E29_SHORT = '- The node ran the native call as a dry run (through the pallets address) and the call failed with the error named above. Ask explain_error for "E29" to read the whole entry: how the route works and what the estimate does not check.';
+
+/** "An amount that ..." reads "..., an amount that ...": a plain first word is lower-cased, a name such as Nfts.mint is not. */
+const asClause = (s: string): string => s.trim().replace(/\.\s*$/, '').replace(/^([A-Z])([a-z]*)(?=[\s,])/, (_, a: string, b: string) => `${a.toLowerCase()}${b}`);
+const asSentence = (s: string): string => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+
+/** The cases of references/native-call-errors.md whose reply is this error, as lines to print under it. */
+function seenLines(module: string, name: string): string[] {
+  return measuredFor(module, name)
+    .slice(0, MAX_SEEN)
+    .map((c) => `  Seen in our testnet dry runs of Nov 15, 2026: ${c.call}, ${asClause(c.mistake)}. ${asSentence(c.fix)}`);
+}
+
 export default defineTool({
   name: 'explain_error',
   title: 'Portaldot V3: what an error means, and what to do',
   description:
     'Explains a Portaldot V3 error: paste any error text, code, JSON or revert data as it is (JSON as text or as an object). ' +
     'Names module errors such as {"index":80,"error":"0x18000000"}, "module 6 error 2" or "Balances.InsufficientBalance" from the chain\'s own metadata; ' +
-    'decodes Solidity revert data (Error(string), Panic(uint256), common custom errors); explains transaction-pool codes 1010 to 1021, DispatchError kinds and JSON-RPC codes; ' +
+    'decodes Solidity revert data (Error(string), Panic(uint256), common custom errors); explains transaction codes 1001 to 1040, DispatchError kinds and JSON-RPC codes; ' +
     `and matches the text against the Bridge Zero team's list of ${ERROR_ENTRIES.length} errors and traps measured on this chain (1010 Invalid Transaction, huge gas numbers, State already discarded, missing logs, storage deposit limits, nonces, 502 and 429, and more), with the cause and the fix. ` +
     'Use it whenever a transaction, dry run, RPC request or script fails. A text without a module error is answered without contacting the chain. ' +
     'Example: {"error": "1010: Invalid Transaction: Inability to pay some fees (e.g. account balance too low)"}.',
@@ -807,10 +883,18 @@ export default defineTool({
     entries.sort((a, b) => b.score - a.score || Number(a.entry.id.slice(1)) - Number(b.entry.id.slice(1)));
 
     const what: string[] = [];
+    let seenAny = false;
+    /** The measured cases go under their error; the first group also names the file they come from, once. */
+    const addSeen = (to: string[], seen: string[]): void => {
+      to.push(...seen);
+      if (seen.length && !seenAny) to.push('  More measured cases, call by call (all by dry run; none confirmed by a sent transaction): references/native-call-errors.md of the knowledge pack.');
+      if (seen.length) seenAny = true;
+    };
     if (named.length) {
       what.push(`${named.length === 1 ? 'Module error' : 'Module errors'}, named from ${source?.how}:`);
       for (const n of named) {
         what.push(`- ${n.title}${n.info?.text ? `. The chain's text: "${cut(n.info.text, 400)}"` : n.info ? ". The chain's metadata has no text for it." : ''}`);
+        addSeen(what, n.info ? seenLines(n.info.module, n.info.name) : []);
         if (listNote.has(n)) {
           const m = /^(.*) \((E\d+)\)$/.exec(listNote.get(n) ?? '');
           if (m) what.push(`  Our list (${m[2]}) gives the cause: ${m[1]}.`);
@@ -826,13 +910,23 @@ export default defineTool({
     const rest: string[] = [];
     for (const r of reverts) rest.push(`- Revert data ${readRevert(r)}`);
     if (!reverts.length) for (const h of hexAlone) rest.push(`- ${h}`);
-    for (const s of standard) rest.push(`- ${s.label}: ${s.meaning.replace(/\.$/, '')} (${s.basis}).`);
+    for (const s of standard) {
+      rest.push(`- ${s.label}: ${s.meaning.replace(/\.$/, '')} (${s.basis}).`);
+      // Token(BelowMinimum), Arithmetic(Underflow), DispatchError BadOrigin: the cases we measured for that error
+      const variant = /^(Token|Arithmetic)\((\w+)\)$/.exec(s.label);
+      const word = /^DispatchError (\w+)$/.exec(s.label);
+      addSeen(rest, variant ? seenLines(variant[1], variant[2]) : word ? seenLines('DispatchError', word[1]) : []);
+    }
     if (named.length && rest.length) what.push('Other parts of the text:');
     what.push(...rest);
 
     // An entry is shown in full only when the text is clearly about it; a loose hint is listed as related.
     const best = entries[0] && entries[0].score >= FULL_SCORE ? entries[0] : undefined;
     const also = entries.filter((m) => m !== best).slice(0, 6);
+    // "Failed to dispatch call: <error>": the named error and its measured cases say more than E29, so E29 is shown short.
+    const errorNamed = named.some((n) => n.info) || standard.some((s) => /^(?:DispatchError |Token\(|Arithmetic\(|Transactional\()/.test(s.label));
+    const shortE29 = best?.entry.id === 'E29' && /failed to dispatch call/i.test(text) && errorNamed;
+    const bestLines = best ? (shortE29 ? [`${best.entry.id}. ${best.entry.title}`, E29_SHORT] : fullEntry(best.entry)) : [];
     const nothing = !named.length && !reverts.length && !hexAlone.length && !standard.length && !entries.length;
 
     if (nothing) {
@@ -869,7 +963,7 @@ export default defineTool({
       shortened && `Only the first ${MAX_INPUT} characters of the text were read.`,
       reachNote,
       what.filter(Boolean).length ? ['', 'What the text says', ...what.filter(Boolean)] : null,
-      best ? ['', `Best match in our list: ${best.entry.id}`, ...fullEntry(best.entry)] : null,
+      best ? ['', `Best match in our list: ${best.entry.id}`, ...bestLines] : null,
       also.length ? ['', `${best ? 'Also matches' : 'Related entries'} (ask explain_error for the id, such as "${also[0].entry.id}", to read one in full):`, ...also.map((m) => entryLine(m.entry))] : null,
       nextLines.length ? `\nNext: ${nextLines.map((l) => l.replace(/\.$/, '')).join('; ')}.` : null,
     );

@@ -42,7 +42,7 @@ This plugin's MCP server gives read-only tools. Claude Code shows them with the 
 - `get_account`: balances in both forms, the nonce, what holds reserved or frozen funds, and contract details when the address is a contract.
 - `convert_amount`: exact conversion between tokens, native base units and wei.
 - `read_storage`: reads any stored value or constant, also at an older block, or lists the entries of a map.
-- `encode_call`: the exact call bytes, a fee estimate, and how a `0x` account can send that native call.
+- `encode_call`: the exact call bytes, a fee estimate, and how a `0x` account can send that native call; with `sender`, also the chain's own answer to the call from that sender (a dry run: accepted, or the error).
 - `estimate_eth_transaction`: gas, the cost in tokens, and whether the node would refuse the transaction with error 1010; on the mainnet it asks the node's runtime API.
 - `simulate_contract_call`: a dry run of a contract call: return value, revert reason, weight and deposit limits.
 - `simulate_contract_deploy`: a dry run of a deployment, from bytecode or a build artifact inside the project folder (a network path is refused): the new address, the deposit part by part, and the limits to use.
@@ -62,8 +62,9 @@ When the tools are not available, the rules above and the reference files still 
 - `references/native-modules.md`: the 69 modules and their indices, call encoding, everyday jobs and their calls, argument types, transaction extensions, multisig and staking rules.
 - `references/ethereum-differences.md`: what an Ethereum developer expects, what this chain does instead, and what to do.
 - `references/recipes.md`: recipes 0, 1 and 5 to 9: connect and check the chain, send tPOT, read a transaction's result and events on both sides, convert addresses, balances in both forms, estimate fees, nonces and sending safely.
-- `references/recipes-contracts.md`: recipes 2 to 4: Solidity with Foundry and cast (build, read, call and deploy), calling a contract from a native account with `revive.call`, and native calls from a `0x` account through the pallets address.
+- `references/recipes-contracts.md`: recipes 2 to 4: Solidity with Foundry and cast (build, read, call and deploy, and reading why the node refuses a transaction without sending it), calling a contract from a native account with `revive.call`, and native calls from a `0x` account through the pallets address.
 - `references/errors.md`: errors and traps, entries E1 onward, with exact error texts: what you see, the cause and the fix.
+- `references/native-call-errors.md`: what native calls answer to common mistakes, measured by dry run: a table per module with the call, the mistake, the chain's reply and what to do, the replies whose name misleads, and mistakes the chain accepts.
 - `references/evm-checks.md`: what the EVM and the Ethereum RPC do on this chain, measured: opcodes, precompiles, token addresses, RPC methods, limits.
 - `references/open-questions.md`: what is still not known or still disputed, with what to do meanwhile, and what was answered on Nov 14, 2026.
 

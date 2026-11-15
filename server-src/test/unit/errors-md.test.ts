@@ -100,8 +100,54 @@ test('real error texts find the right entry first', () => {
     ['{"code":-32000,"message":"The transaction consumes more than the allowed weight. needed=Weight(ref_time: 1531321961872, proof_size: 23813914) allowed=Weight(ref_time: 1529902658700, proof_size: 14111759216387806985) overweight_by=Weight(ref_time: 1419303172, proof_size: 0)"}', 'E32'],
     ['{"code":-32000,"message":"failed to run contract: Module(ModuleError { index: 80, error: [3, 0, 0, 0], message: Some(\\"OutOfGas\\") })"}', 'E32'],
     ['eth_getLogs: {"code":-32000,"message":"Failed to filter logs"}', 'E33'],
+    // texts measured on Nov 15, 2026: refusals before a transaction runs, and wrong parameters
+    ['1010: Invalid Transaction: Inability to pay some fees , e.g. account balance too low', 'E1'],
+    ['1010: Invalid Transaction: Transaction has an ancient birth block', 'E1'],
+    ['1010: Invalid Transaction: Transaction call is not expected', 'E1'],
+    ['1040: Client error: Could not decode `OpaqueExtrinsic.0`:\n\tNot enough data to decode vector\n', 'E34'],
+    ['1001: Extrinsic has invalid format: Could not decode `OpaqueExtrinsic.0`:\n\tNot enough data to decode vector\n', 'E34'],
+    ['1002: Verification Error: Runtime error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed', 'E34'],
+    ['4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed', 'E34'],
+    ['{"code":-32000,"message":"Invalid transaction"}', 'E35'],
+    ['{"code":1013,"message":"Transaction Already Imported"}', 'E12'],
+    ['1013: Transaction Already Imported: Any { .. }', 'E12'],
+    ['1011: Unknown Transaction Validity: NoUnsignedValidator', 'E12'],
+    ['{"code":-32602,"message":"Invalid params","data":"No more params"}', 'E36'],
+    ['-32602: Invalid params: No more params', 'E36'],
+    ['{"code":-32602,"message":"Invalid params","data":"OddLength"}', 'E36'],
+    ['{"code":-32602,"message":"Invalid params","data":"InvalidHexCharacter { c: \'z\', index: 0 }"}', 'E36'],
+    ['-32602: Invalid params: invalid hex character: h, at 0 at line 1 column 7', 'E36'],
+    ['{"code":-32602,"message":"Invalid params","data":"hex string without 0x prefix at line 1 column 8"}', 'E36'],
+    ['{"code":-32602,"message":"Invalid params","data":"invalid type: integer `4`, expected a (both 0x-prefixed or not) hex string or byte array containing between (0; 32] bytes at line 1 column 1"}', 'E36'],
+    ['{"code":-32000,"message":"Ethereum block not found"}', 'E37'],
+    ['{"code":-32000,"message":"Account not found for address 0x1111111111111111111111111111111111111111"}', 'E37'],
   ];
   for (const [text, id] of cases) assert.equal(matchEntries(focusText(text))[0]?.entry.id, id, text);
+});
+
+test('the Ethereum RPC\'s own "Invalid transaction" (-32000) is not the pool\'s "Invalid Transaction" (1010)', () => {
+  const own = '{"code":-32000,"message":"Invalid transaction"}';
+  const pool = '{"code":1010,"message":"Invalid Transaction"}';
+  assert.ok(!matchEntries(own).some((m) => m.entry.id === 'E1'), 'the RPC\'s own refusal must not point to E1');
+  assert.ok(!matchEntries(pool).some((m) => m.entry.id === 'E35'), 'the pool\'s refusal must not point to E35');
+  const labels = (t: string): string[] => standardMatches(t).map((s) => s.label);
+  assert.ok(labels(own).some((l) => l.startsWith('-32000 Invalid transaction')));
+  assert.ok(!labels(own).includes('1010 Invalid Transaction'));
+  assert.ok(labels(pool).includes('1010 Invalid Transaction'));
+  assert.ok(!labels(pool).some((l) => l.startsWith('-32000 Invalid transaction')));
+  // a text with no code at all is read as the pool's
+  assert.equal(matchEntries('Invalid Transaction')[0]?.entry.id, 'E1');
+});
+
+test('texts that only mention a code or a method of the new entries do not get them in full', () => {
+  const full = (t: string): string | undefined => { const m = matchEntries(focusText(t))[0]; return m && m.score >= 6 ? m.entry.id : undefined; };
+  for (const [text, not] of [
+    ['error 1001 while reading the receipt', 'E34'],
+    ['signature verification error', 'E34'],
+    ['1011: Unknown Transaction Validity: CannotLookup', 'E12'],
+    ['eth_sendRawTransaction: {"code":-32000,"message":"transaction underpriced"}', 'E35'],
+    ['{"code":4001,"message":"User rejected the request.","data":{"method":"eth_sendTransaction"}}', 'E37'],
+  ] as const) assert.notEqual(full(text), not, text);
 });
 
 test('a long answer is matched on its error lines only', () => {
@@ -167,8 +213,16 @@ test('standard codes: pool codes, InvalidTransaction reasons, DispatchError kind
   // a Solidity panic is not a Substrate arithmetic error, and a block number is not a pool code
   assert.ok(!labels('execution reverted: panic: arithmetic underflow or overflow (0x11)').some((l) => l.startsWith('Arithmetic')));
   assert.deepEqual(labels('the transfer was in block 1014 of the chain'), []);
+  // codes and texts measured on Nov 15, 2026
+  assert.ok(labels('1040: Client error: Could not decode `OpaqueExtrinsic.0`: Not enough data to decode vector').includes('1040 Client error'));
+  assert.ok(labels('1011: Unknown Transaction Validity: NoUnsignedValidator').includes('1011 Unknown Transaction Validity'));
+  assert.ok(labels('{"code":-32602,"message":"Invalid params","data":"No more params"}').includes('Invalid params: No more params'));
+  assert.ok(labels('{"code":-32000,"message":"Ethereum block not found"}').includes('-32000 Ethereum block not found'));
+  for (const label of ['1001 Extrinsic has invalid format', '1002 Verification Error', '1011 Unknown Transaction Validity', '1012 Transaction is temporarily banned', '1013 Transaction Already Imported', '1040 Client error', 'Token(BelowMinimum)', 'Token(NotExpendable)', 'Token(CannotCreate)']) {
+    assert.match(STANDARD.find((s) => s.label === label)?.basis ?? '', /measured on this chain on Nov 1[45], 2026/, label);
+  }
   // what we did not measure says so
-  for (const s of STANDARD) assert.match(s.basis, /standard Substrate meaning, not measured by us on this chain|standard JSON-RPC 2\.0 meaning|measured on this chain on Nov 14, 2026/, s.label);
+  for (const s of STANDARD) assert.match(s.basis, /standard Substrate meaning, not measured by us on this chain|standard JSON-RPC 2\.0 meaning|measured on this chain on Nov 1[45], 2026/, s.label);
 });
 
 test('our list explains some module errors in brackets', () => {

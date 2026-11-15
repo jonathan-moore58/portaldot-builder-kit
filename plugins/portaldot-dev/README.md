@@ -15,7 +15,7 @@ Portaldot V3 looks like Polkadot on one side and like Ethereum on the other, and
 
 No tool asks for a private key or a secret phrase, and none signs or sends a transaction. The most a tool returns is unsigned call data for you to sign in your own wallet or script. A secret phrase in any argument is refused before anything is sent. A private key looks the same as an account id (0x and 64 hex characters), so never paste one.
 
-When a tool is used, the server connects to the public Portaldot endpoints, or to the ones you set through its environment variables, and to nothing else. The addresses, call data and bytecode you ask about are sent to those nodes. No data is sent to us, and there is no telemetry.
+When a tool is used, the server connects to the public Portaldot endpoints, or to the ones you set through its environment variables, and to nothing else; when `HTTPS_PROXY` or `HTTP_PROXY` is set, it goes through that proxy. The addresses, call data and bytecode you ask about are sent to those nodes. No data is sent to us, and there is no telemetry.
 
 ## Install
 
@@ -32,6 +32,8 @@ Inside a session the same two steps are:
 /plugin marketplace add jonathan-moore58/portaldot-builder-kit
 /plugin install portaldot-dev@bridge-zero
 ```
+
+In a cloud session, unless the environment allows every host, add `test-node-v3.portaldot.dev`, `test-evm-rpc-v3.portaldot.dev` and `live-v3-node.portaldot.dev` to its allowed hosts, or the chain tools cannot connect (not yet tried inside a cloud session).
 
 ## Licence
 

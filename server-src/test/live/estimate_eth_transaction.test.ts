@@ -1,10 +1,12 @@
 // estimate_eth_transaction against the live chains, with no account of ours: the Treasury's 0x form as
-// "from" (an estimate needs no signature), an address with no balance, and a contract found on the chain
+// "from" (an estimate needs no signature), an address with no balance, a new random native account, and a contract found on the chain
 // at run time. The estimate is checked a second way with a raw eth_estimateGas request, and the limits
 // are recomputed from the printed numbers. Nothing depends on a balance or a block number.
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import tool from '../../src/tools/estimate_eth_transaction.ts';
+import { fallbackIdOfH160, h160OfAccountId, toSs58 } from '../../src/lib/address.ts';
 import { runTool } from '../../src/lib/tool.ts';
 import { closeAll, getConn } from '../../src/lib/chain.ts';
 import { NETWORKS } from '../../src/lib/networks.ts';
@@ -56,7 +58,10 @@ test('the Treasury 0x form through the pallets address: a native call, the estim
   assert.equal(r.isError, false, r.text);
   assert.match(r.text, /Read just now through the Ethereum RPC/);
   assert.match(r.text, /the pallets address: this runs a native call, System\.remarkWithEvent/);
-  assert.match(r.text, /Its receipt will show gasUsed 0 and no logs/);
+  // the 0x form of a native account runs the call as that account, not as a fallback account (measured by dry run on Nov 15, 2026)
+  assert.match(r.text, /From the 0x form of a native account, as here, the node runs it as that native account itself, 5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z, so the figures below are that account's/);
+  assert.match(r.text, /Sent from an Ethereum key, such a transaction runs the call as the key's fallback account instead; its receipt shows gasUsed 0 and no logs/);
+  assert.doesNotMatch(r.text, /runs a native call as the sender's fallback account/);
   assert.match(r.text, /is the 0x form of the native account 5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z/);
   assert.match(r.text, /No fields to copy: no key can sign for this sender/);
   assert.match(r.text, /gas includes the storage deposit/);
@@ -66,9 +71,18 @@ test('the Treasury 0x form through the pallets address: a native call, the estim
   assert.ok(close(n.estimate, BigInt(raw.result)), `tool ${n.estimate}, eth_estimateGas ${BigInt(raw.result)}`);
 });
 
+test('a native account not linked to its 0x form yet: the call runs as that 0x form\'s fallback account', async () => {
+  const id = randomBytes(32);
+  const r = await run({ from: toSs58(id), to: PALLETS, data: REMARK });
+  assert.equal(r.isError, false, r.text);
+  assert.match(r.text, new RegExp(`${toSs58(id)} is not linked to its 0x form yet \\(a native account is linked when it is created\\), so the node runs the call as that 0x form's fallback account ${toSs58(fallbackIdOfH160(h160OfAccountId(id)))}, not as ${toSs58(id)}\\.`));
+  assert.match(r.text, /No fields to copy/);
+});
+
 test('an address with no balance: the verdict follows the balance, and the fields to copy are complete', async () => {
   const r = await run({ from: UNUSED, to: PALLETS, data: REMARK });
   assert.equal(r.isError, false, r.text);
+  assert.match(r.text, /runs a native call as the sender's fallback account \(the 20 bytes followed by twelve 0xEE bytes\), which pays its fee\. Its receipt will show gasUsed 0 and no logs/);
   const n = checkArithmetic(r.text, 0n);
   const nonce = /nonce to use: +(\d+)/.exec(r.text)?.[1];
   assert.ok(nonce !== undefined);
