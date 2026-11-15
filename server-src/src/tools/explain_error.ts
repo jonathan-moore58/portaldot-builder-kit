@@ -317,6 +317,13 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/eth_sendtransaction/, 4],
     [/eth_accounts\W{1,8}\[\s*\]/, 4],
   ],
+  E38: [
+    // two patterns that both match the dispatch form, so that this entry comes before E29: a filtered call
+    // is about the chain's state, not about the route the call took
+    [/callfiltered/, 10],
+    [/origin filter prevent|index: 0, error: \[5, 0, 0, 0\]/, 9],
+    [/(?:\b|_)safe[ _-]?mode\b|(?:\b|_)tx[ _-]?pause\b|\bpaused calls?\b/, 6],
+  ],
 };
 
 export interface EntryMatch {
@@ -751,6 +758,7 @@ const NEXT: Record<string, string> = {
   E35: 'estimate_eth_transaction gives the fields of a type-2 transaction for chain id 420420777 to sign. Recipe 2f does not help here: the RPC refused the bytes before the node saw them, and the node\'s check answers Call for malformed bytes and Payment for a legacy transaction without a chain id.',
   E36: 'get_block reads a block by its number or by either of its hashes; convert_address turns a 5... address into its 0x form.',
   E37: 'get_block shows both hashes of a block (the node\'s and the Ethereum side\'s) and turns either into the block.',
+  E38: 'get_chain_facts says whether safe mode is on and through which block; read_storage {"item": "SafeMode.enteredUntil"} reads it, and {"item": "TxPause.pausedCalls"} lists the paused calls. For a call through a proxy, read_storage {"item": "Proxy.proxies", "keys": ["<the account the proxy acts for>"]} shows the proxy\'s type.',
 };
 
 const UNDERSTANDS = [

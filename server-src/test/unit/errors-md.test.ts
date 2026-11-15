@@ -147,7 +147,22 @@ test('texts that only mention a code or a method of the new entries do not get t
     ['1011: Unknown Transaction Validity: CannotLookup', 'E12'],
     ['eth_sendRawTransaction: {"code":-32000,"message":"transaction underpriced"}', 'E35'],
     ['{"code":4001,"message":"User rejected the request.","data":{"method":"eth_sendTransaction"}}', 'E37'],
+    ['the node was started with --rpc-methods unsafe mode', 'E38'],
+    ['the keeper paused caller 0x12 until the next round', 'E38'],
   ] as const) assert.notEqual(full(text), not, text);
+});
+
+test('a filtered call finds E38 first, also in the form the pallets address gives a module error (E29)', () => {
+  for (const text of [
+    'System.CallFiltered',
+    'proxy.ProxyExecuted: Err(system.CallFiltered)',
+    // E29's form for a module error, with this error's numbers: E38 comes before E29, the route it came by
+    '{"code":-32000,"message":"Failed to dispatch call: Module(ModuleError { index: 0, error: [5, 0, 0, 0], message: Some(\\"CallFiltered\\") })"}',
+    'Is the chain in safe mode?',
+    'TxPause.pausedCalls',
+    'pallet_tx_pause',
+    'pallet_safe_mode',
+  ]) assert.equal(matchEntries(focusText(text))[0]?.entry.id, 'E38', text);
 });
 
 test('a long answer is matched on its error lines only', () => {

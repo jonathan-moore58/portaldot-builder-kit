@@ -1330,6 +1330,37 @@
     "Utility.batch",
     "a dry run reports success for such a call even when the call inside fails"
    ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "System.CallFiltered"
+   },
+   "includes": [
+    "System.CallFiltered",
+    "The origin filter prevent the call to be dispatched",
+    "E38",
+    "Proxy.ProxyExecuted"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "E38"
+   },
+   "includes": [
+    "E38. `System.CallFiltered`",
+    "safeMode.enteredUntil"
+   ]
+  },
+  {
+   "tool": "get_chain_facts",
+   "args": {
+    "network": "testnet"
+   },
+   "includes": [
+    "safe mode: "
+   ]
   }
  ]
 }

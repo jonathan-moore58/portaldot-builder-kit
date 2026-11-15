@@ -23,7 +23,7 @@ An assistant that answers from Polkadot or Ethereum habits gets these wrong. Thi
 
 | Tool | What it answers |
 | --- | --- |
-| `get_chain_facts` | Endpoints, chain ids, decimals, the gas price and constants read live, and whether the chain is producing blocks |
+| `get_chain_facts` | Endpoints, chain ids, decimals, the gas price and constants read live, whether the chain is producing blocks, and whether safe mode is on or a call is paused |
 | `search_chain` | Which module, call, event, error, constant or stored value does a job, by everyday words or by name |
 | `describe_item` | A call's exact arguments and what each means, its indices, sample code; or a whole module |
 | `convert_address` | Both forms of an address, whether they are linked on the chain, and which form to use where |
@@ -122,9 +122,9 @@ The built server is one file with no dependencies to install. Node.js 24 runs th
 
 Numbers from November 15, 2026, on Node.js 24 and Windows:
 
-- 184 unit tests, with no network.
+- 192 unit tests, with no network.
 - 126 live tests, which read the testnet and the mainnet.
-- 147 checks of the built server over stdio, in both protocol modes of the MCP client.
+- 150 checks of the built server over stdio, in both protocol modes of the MCP client.
 - A copy without `node_modules` builds to the same file, byte for byte.
 - 12 developer questions, each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web). With the plugin 24 of 24 answers were right; without it 16 of 24. The questions and their graders are in `plugins/portaldot-dev/evals/`. This repeats the run: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
 
@@ -137,7 +137,7 @@ Two limits to know:
 
 ## Status
 
-Version 0.2.0, November 2026. It supports Claude Code, checked on version 2.1.325; much older versions reject the plugin's manifest. Other assistants may follow.
+Version 0.2.1, November 2026. It supports Claude Code, checked on version 2.1.325; much older versions reject the plugin's manifest. Other assistants may follow.
 
 The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-builder-kit/issues.
 

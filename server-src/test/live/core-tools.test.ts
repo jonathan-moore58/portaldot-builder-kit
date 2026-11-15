@@ -109,6 +109,11 @@ for (const key of NETS) {
     const genesis = await nodeHttp<string>(key, 'chain_getBlockHash', [0]);
     const chainId = Number(api.consts.revive.chainId.toString());
     const ed = BigInt(api.consts.balances.existentialDeposit.toString());
+    // the two switches that stop calls for everyone: the line says what the chain's own storage says
+    const until = await api.query.safeMode.enteredUntil();
+    const paused = await api.query.txPause.pausedCalls.keys();
+    assert.match(text, until.isSome ? /^- WARNING: safe mode: ON\b/m : /^- (?:WARNING: )?safe mode: off\b/m);
+    assert.match(text, paused.length ? /paused by name: "/ : / No call is paused by name\./);
 
     assert.equal(chainId, net.evmChainId);
     assert.ok(text.includes(`- chain id ${chainId} (0x${chainId.toString(16)})`), 'chain id line');

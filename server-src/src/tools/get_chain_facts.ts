@@ -2,6 +2,7 @@ import { ethRpc, getConn, hasEvmRpc } from '../lib/chain.ts';
 import { duration, formatUnits, lines, nativeAmount, untrusted } from '../lib/format.ts';
 import { getIndex } from '../lib/meta.ts';
 import { PALLETS_ADDRESS, pickNetwork } from '../lib/networks.ts';
+import { readSwitches, switchesLine } from '../lib/switches.ts';
 import { defineTool, networkField } from '../lib/tool.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,7 +29,7 @@ export default defineTool({
     'Use it first when writing connection code, configuration or constants for Portaldot V3 (tokens POT and tPOT), and when requests fail. Returns the facts that code and configuration need, read from the chain just now: ' +
     'RPC endpoints, Ethereum chain id, token symbol and decimals (14 native, 18 on the Ethereum side), address format, existential deposit, the gas price now, ' +
     'storage-deposit prices, and whether the chain and its Ethereum RPC are answering. Also dated notes on tooling: MetaMask settings, the explorer, test tokens. ' +
-    'When requests fail, it shows whether the chain is still producing blocks. Example: {"network": "mainnet"}; with no arguments it reads the testnet.',
+    'When requests fail or calls are refused, it shows whether the chain is still producing blocks and whether safe mode is on or a call is paused. Example: {"network": "mainnet"}; with no arguments it reads the testnet.',
   input: { network: networkField },
   readsChain: true,
   handler: async ({ network: key }) => {
@@ -44,7 +45,9 @@ export default defineTool({
       api.query.timestamp.now(),
       api.call.reviveApi?.gasPrice ? api.call.reviveApi.gasPrice().catch(() => null) : null,
     ]);
-    const finalized = await api.rpc.chain.getHeader(finalizedHash);
+    // Two switches of the runtime that stop calls for everyone (errors.md E38), read together with the
+    // finalized header, so they add no wait of their own.
+    const [finalized, switchReads] = await Promise.all([api.rpc.chain.getHeader(finalizedHash), readSwitches(api)]);
     const best = header.number.toNumber();
     const fin = finalized.number.toNumber();
     const age = (Date.now() - now.toNumber()) / 1000;
@@ -118,6 +121,8 @@ export default defineTool({
         ? `- WARNING: the newest block (${best}) is ${duration(age)} old, and a block should come every 6 s. The chain looks stopped. The testnet stopped twice in Oct 2026 (for 13 h 24 min and 5 h 16 min). Wait and check again; it is not a fault in your code. (If your computer's clock is wrong, this reading is wrong too.)`
         : `- head: block ${best}, finalized ${fin}; the newest block is ${duration(age)} old (a block comes every 6 s). The chain is producing blocks.`;
 
+    const switches = switchesLine({ ...switchReads, best });
+
     const isTestnet = network.key === 'testnet';
     return lines(
       `${network.label}: basic facts`,
@@ -127,6 +132,7 @@ export default defineTool({
       `- name ${chainText.startsWith('"') ? chainText : `"${chainText}"`}, runtime ${specText} spec ${index.specVersion}, transaction version ${api.runtimeVersion.transactionVersion.toNumber()}`,
       `- genesis ${genesis}${genesis === network.genesis ? '' : ' (NOT the recorded one, see the warning above)'}`,
       health,
+      switches,
       fin < best - 20 && `- WARNING: finality is ${best - fin} blocks behind the head (normally about 2). Do not treat recent transactions as settled.`,
       `- ${index.modules.length} modules. search_chain finds a module or call by what it does; describe_item gives exact arguments.`,
       '',

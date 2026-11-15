@@ -8,7 +8,7 @@ import { TOOLS } from './tools/index.ts';
 export const SERVER_INFO = {
   name: 'portaldot-dev',
   title: 'Portaldot V3 chain tools, by the Bridge Zero team',
-  version: '0.2.0',
+  version: '0.2.1',
 };
 
 // Read by the model at the start of a session, so it is short and says when to use what.
@@ -24,7 +24,7 @@ export const INSTRUCTIONS = [
   "5. Never guess a call's name, arguments or index. Call search_chain, then describe_item; encode_call gives the exact bytes.",
   '6. The default network is the testnet (tPOT, Ethereum chain id 420420777). The mainnet (POT, 780780777) has no public Ethereum RPC and held no contracts or tokens on Nov 13, 2026.',
   '',
-  'Also: get_chain_facts (endpoints, live constants, whether the chain is moving), get_account, read_storage, simulate_contract_call, simulate_contract_deploy, get_transaction (takes a 0x hash the explorer cannot look up), get_block, and explain_error (paste any error text).',
+  'Also: get_chain_facts (endpoints, live constants, whether the chain is moving or in safe mode), get_account, read_storage, simulate_contract_call, simulate_contract_deploy, get_transaction (takes a 0x hash the explorer cannot look up), get_block, and explain_error (paste any error text).',
   'Results say when a fact was measured and when it is only reported by others. Pass that on rather than stating it as certain.',
 ].join('\n');
 

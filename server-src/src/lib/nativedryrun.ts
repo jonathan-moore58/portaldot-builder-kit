@@ -194,7 +194,8 @@ export function innerCallNotes(names: string[]): string[] {
       `Note: ${list(hiders)} ${hiders.length === 1 ? 'runs' : 'run'} a call inside, and a dry run reports success for such a call even when the call inside fails ` +
         `(measured on Nov 15, 2026 for Utility.batch, Utility.forceBatch, Proxy.proxy, Sudo.sudo and Sudo.sudoAs${unmeasured.length ? `; expected for ${list(unmeasured)}, not measured` : ''}). ` +
         `So dry-run the inner call by itself, from the account it runs as${batch ? ', or use Utility.batchAll, whose dry run fails when a call inside fails' : ''}.` +
-        (hiders.includes('Sudo.sudo') || hiders.includes('Sudo.sudoUncheckedWeight') ? ' A call that only root may make answers BadOrigin when it is dry-run by itself, so what it does under Sudo.sudo cannot be seen this way.' : ''),
+        (hiders.includes('Sudo.sudo') || hiders.includes('Sudo.sudoUncheckedWeight') ? ' A call that only root may make answers BadOrigin when it is dry-run by itself, so what it does under Sudo.sudo cannot be seen this way.' : '') +
+        (hiders.includes('Proxy.proxy') || hiders.includes('Proxy.proxyAnnounced') ? ' For a call through a proxy, the proxy\'s type can still refuse the inner call (System.CallFiltered in the Proxy.ProxyExecuted event, explain_error "E38"), and no dry run shows that: check the type in proxy.proxies before sending, and read the event after.' : ''),
     );
   }
   if (names.some((n) => n.startsWith('Multisig.'))) {
