@@ -1,4 +1,4 @@
-# Portaldot V3 Dev Kit
+# Portaldot Builder Kit
 
 by the Bridge Zero team
 
@@ -22,14 +22,14 @@ When a tool is used, the server connects to the public Portaldot endpoints, or t
 You need Claude Code, Node.js 20 or newer on your PATH (we ran it only on Node.js 24), and git.
 
 ```
-claude plugin marketplace add jonathan-moore58/portaldot-dev-kit
+claude plugin marketplace add jonathan-moore58/portaldot-builder-kit
 claude plugin install portaldot-dev@bridge-zero
 ```
 
 Inside a session the same two steps are:
 
 ```
-/plugin marketplace add jonathan-moore58/portaldot-dev-kit
+/plugin marketplace add jonathan-moore58/portaldot-builder-kit
 /plugin install portaldot-dev@bridge-zero
 ```
 

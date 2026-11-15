@@ -1,4 +1,4 @@
-# Portaldot V3 Dev Kit
+# Portaldot Builder Kit
 
 by the Bridge Zero team
 
@@ -48,7 +48,7 @@ An assistant that answers from Polkadot or Ethereum habits gets these wrong. Thi
 You need Claude Code, Node.js 20 or newer on your PATH (we ran it only on Node.js 24), and git.
 
 ```
-claude plugin marketplace add jonathan-moore58/portaldot-dev-kit
+claude plugin marketplace add jonathan-moore58/portaldot-builder-kit
 claude plugin install portaldot-dev@bridge-zero
 ```
 
@@ -129,7 +129,7 @@ Two limits to know:
 
 Version 0.1.0, November 2026. It supports Claude Code, checked on version 2.1.325; much older versions reject the plugin's manifest. Other assistants may follow.
 
-The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-dev-kit/issues.
+The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-builder-kit/issues.
 
 ## Licence
 
