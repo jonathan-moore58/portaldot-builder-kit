@@ -1,19 +1,19 @@
-# Recipes for contracts: Foundry and cast, native contract calls, native calls from a 0x account
+# Recipes for contracts: Foundry and cast, Assets tokens, native contract calls, native calls from a 0x account
 
-Recipes 2, 3 and 4 of the Portaldot V3 recipes. Recipes 0, 1 and 5 to 9 (connect, send tPOT, read results and events, addresses, balances, fees, nonces) are in `recipes.md`, with the prerequisites, the safety rule and the basis words. Read this file when you build, deploy or call a Solidity contract, or send a native call from an Ethereum key.
+Recipes 2, 3 and 4 of the Portaldot V3 recipes. Recipes 0, 1 and 5 to 10 (connect, sign and send tPOT, read results and events, addresses, balances, fees, nonces, stored data) are in `recipes.md`, with the prerequisites, the safety rule and the basis words. Read this file when you build, deploy or call a Solidity contract, use an Assets token from the Ethereum side, or send a native call from an Ethereum key.
 
-By the Bridge Zero team, an independent project and not an official Portaldot one. The read-only parts below ran against the V3 testnet on Nov 14, 2026; the parts that sign and send ran up to the signing step and are labelled "Assembled" unless a recipe says "Proven".
+By the Bridge Zero team, an independent project and not an official Portaldot one. The read-only parts below ran against the V3 testnet on Nov 14, 2026; the parts that sign and send ran up to the signing step and are labelled "Assembled" unless a recipe says "Proven". Each basis line says what ran.
 
-You need: Node 20 or newer with @polkadot/api 17 (`recipes.md`), recipe 0 saved as `v3.mjs`, and Foundry for the shell parts (they ran with Foundry 1.8.5 in Git Bash on Windows; any bash works). Error numbers (E1, E2 and so on) refer to `errors.md`.
+You need: Node 20 or newer with @polkadot/api 17 (`recipes.md`), recipes 0, 6 and 9 saved as `v3.mjs`, `addresses.mjs` and `nonce-check.mjs`, and Foundry for the shell parts (they ran with Foundry 1.8.5 in Git Bash on Windows; any bash works). Error numbers (E1, E2 and so on) refer to `errors.md`.
 
-- 2. Solidity on the testnet with Foundry and cast: 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path, 2f read why the node refuses an Ethereum transaction, without sending it
+- 2. Solidity on the testnet with Foundry and cast: 2a build, 2b read, 2c call by Ethereum transaction (and send a whole balance), 2d deploy by Ethereum transaction (seen on the chain, not sent by us), 2e deploy on the native path, 2f read why the node refuses an Ethereum transaction, without sending it, 2g an Assets token through its ERC-20 address: buy it in the swap pool, approve, transferFrom, permit
 - 3. Call a contract from a native account (`revive.call`)
 - 4. Call a native module from a `0x` account
 
 Two things to know first:
 
 - Gas on the Ethereum side includes the storage deposit, so estimates of 10^12 to 10^16 gas are normal. A new 32-byte storage slot holds 3.8415 tPOT; deploying new code whose runtime part is L bytes holds 0.078 x L + 13.11 tPOT before the constructor's storage (Checked Nov 14, 2026; `amounts-and-fees.md`).
-- The gas rule for every Ethereum transaction: gas limit = `eth_estimateGas` + 10 percent; max fee = `eth_gasPrice` + one eighth; priority fee 0; and the balance must cover value + gas limit x max fee, or the node refuses the transaction with error 1010 (E1). Experience, proven by six contract calls sent as Ethereum transactions between Oct 19 and Nov 1, 2026, and by the two transactions of recipe 4.
+- The gas rule for every Ethereum transaction: gas limit = `eth_estimateGas` + 10 percent; max fee = `eth_gasPrice` + one eighth; priority fee 0. The node takes the transaction only when the sender can spend gas limit x base fee (`eth_gasPrice`), and refuses it with error 1010 otherwise (E1). It charges gasUsed x base fee: unused gas, the room up to the max fee and the priority fee are not charged. The value is not checked before the block: a value that does not fit beside gas limit x base fee is mined as failed, and the fee is paid (E45). So check balance >= value + gas limit x gas price before signing. Checked on Nov 15, 2026 by transactions we sent (blocks 477814 to 478132); the limits themselves are Experience, proven by six contract calls sent as Ethereum transactions between Oct 19 and Nov 1, 2026, and by the two transactions of recipe 4.
 
 ---
 
@@ -65,15 +65,15 @@ What you should see (Nov 14, 2026, an ERC-20 found on the testnet): `cast codesi
 
 - `gasUsed x effectiveGasPrice` in a receipt is the fee plus the storage deposit (3.857 tPOT in that receipt; 3.8415 of it the deposit for one new slot).
 - `cast logs` returns only the logs of Ethereum transactions. Events from native-path calls are only on the node (recipe 5c in `recipes.md`, E6). There is no block-range limit: from block 0 to the head, one contract's 9 logs came back in about 0.5 s on Nov 14, 2026. A `--to-block` beyond the head gives `Failed to filter logs` (E33).
-- An asset of the Assets module answers ERC-20 calls at the address made of its asset id as 4 big-endian bytes, then 12 zero bytes, then `0x0001`, then `0x0000`. Asset 7777 is at `0x00001e6100000000000000000000000000010000`: `cast call <that address> "totalSupply()(uint256)"` returned the asset's `supply` from `assets.asset(7777)`, and `decimals()` and `symbol()` its metadata (Checked Nov 14, 2026 on 7 assets; transfers through it were not tried). `evm-checks.md` section 3 has the details, including the PoolAssets layout.
+- An asset of the Assets module answers ERC-20 calls at the address made of its asset id as 4 big-endian bytes, then 12 zero bytes, then `0x0001`, then `0x0000`. Asset 7777 is at `0x00001e6100000000000000000000000000010000`: `cast call <that address> "totalSupply()(uint256)"` returned the asset's `supply` from `assets.asset(7777)`, and `decimals()` and `symbol()` its metadata (Checked Nov 14, 2026 on 7 assets). `evm-checks.md` section 3 has the details, including the PoolAssets layout. Writes through that address work too: recipe 2g.
 
 Basis: **Proven**: every command ran on Nov 14, 2026 against the testnet. Tool: `get_account` for a contract's code, size, hash and deposits; `simulate_contract_call` for any view.
 
 ### 2c. Call a contract with an Ethereum transaction
 
-What it does: estimates, applies the gas rule, refuses when the node would answer 1010, signs with a Foundry keystore, prints the hash, publishes, and waits for the receipt. Recipe 4 uses the same script.
+What it does: checks on the node that no transaction of the account waits, estimates, applies the gas rule, refuses when the balance cannot cover value + gas limit x gas price, signs with a Foundry keystore, prints the hash, publishes, and waits for the receipt. Recipe 4 uses the same script.
 
-You need: a Foundry keystore with a TEST key that holds tPOT. `cast wallet import v3test --interactive` asks for the key and a password and stores the key encrypted; never paste a key into a chat or a file. Fund its address from a native wallet by sending tPOT to its fallback `5...` form (recipe 6 in `recipes.md`).
+You need: a Foundry keystore with a TEST key that holds tPOT. `cast wallet import v3test --interactive` asks for the key and a password and stores the key encrypted; never paste a key into a chat or a file. Fund its address from a native wallet by sending tPOT to its fallback `5...` form (recipe 6 in `recipes.md`). Recipe 9's `nonce-check.mjs` in the same folder.
 
 ```sh
 #!/usr/bin/env bash
@@ -87,15 +87,16 @@ RPC=https://test-evm-rpc-v3.portaldot.dev
 FROM=$(cast wallet address --account "$ACCOUNT")
 
 [ "$(cast chain-id --rpc-url "$RPC")" = 420420777 ] || { echo "not the V3 testnet"; exit 1; }
+# The Ethereum "pending" count never shows a waiting transaction on V3: ask the node (recipe 9).
+node nonce-check.mjs "$FROM" > /dev/null || { echo "a transaction of this account waits, or the check failed (node nonce-check.mjs $FROM)"; exit 1; }
 NONCE=$(cast nonce "$FROM" --rpc-url "$RPC")
-[ "$NONCE" = "$(cast nonce "$FROM" --block pending --rpc-url "$RPC")" ] || { echo "a transaction is pending"; exit 1; }
 EST=$(cast estimate --from "$FROM" "$TO" "$DATA" --value "$VALUE" --rpc-url "$RPC")   # includes the storage deposit
-GP=$(cast gas-price --rpc-url "$RPC")
+GP=$(cast gas-price --rpc-url "$RPC")   # the base fee
 # BigInt arithmetic: these products overflow the shell's 64-bit integers
-read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, ${VALUE}n+gas*fee].join(' ')")"
+read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, ${VALUE}n+gas*g].join(' ')")"
 BAL=$(cast balance "$FROM" --rpc-url "$RPC")
 echo "estimate $EST gas, gas price $GP wei; gas limit $GAS, max fee $MAXFEE; need $NEED wei, have $BAL wei"
-node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance too low: the node would refuse it with error 1010"; exit 1; }
+node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance too low: refused with 1010, or mined as failed if only the value does not fit"; exit 1; }
 
 cd "$(mktemp -d)"                   # Foundry reads the .env of the folder it runs in: sign in an empty one
 RAW=$(cast mktx "$TO" "$DATA" --rpc-url "$RPC" --chain 420420777 --account "$ACCOUNT" \
@@ -112,22 +113,24 @@ Use it for a contract call:
 TO=$CONTRACT DATA=$(cast calldata "approve(address,uint256)" $SPENDER 1000000000000000000) bash send-eth.sh
 ```
 
-What you should see before signing (Nov 14, 2026, an ERC-20 `approve` that writes one new slot):
+What you should see before signing (Nov 14, 2026, an ERC-20 `approve` that writes one new slot; the `need` figure is worked out from the same numbers under the rule measured on Nov 15):
 
 ```
-estimate 249985957328367 gas, gas price 15685 wei; gas limit 274984553061203, max fee 17645; need 4852102438764926935 wei, have ... wei
+estimate 249985957328367 gas, gas price 15685 wei; gas limit 274984553061203, max fee 17645; need 4313132714764969055 wei, have ... wei
 ```
 
-That is about 3.92 tPOT of cost (3.8415 of deposit and the fee), while the balance check asks for about 4.85 tPOT. From an address with no tPOT the script stops with `balance too low: the node would refuse it with error 1010`. After publishing, the receipt shows `status 1 (success)`; `gasUsed x effectiveGasPrice` is the fee plus the deposit.
+That is about 3.92 tPOT of cost (3.8415 of deposit and the fee), and the balance check asks for about 4.31 tPOT. From an address with no tPOT the script stops at the balance check. After publishing, the receipt shows `status 1 (success)`; `gasUsed x effectiveGasPrice` is the fee plus the deposit.
 
-- `--gas-price` of `cast mktx` is the max fee of an EIP-1559 (type 2) transaction; `--priority-gas-price 0` is accepted (`eth_maxPriorityFeePerGas` returns 0).
+- `--gas-price` of `cast mktx` is the max fee of an EIP-1559 (type 2) transaction; `--priority-gas-price 0` is accepted (`eth_maxPriorityFeePerGas` returns 0). Without the two flags, cast 1.8.5 signs a max fee of 2 x base fee + 1 wei and a priority fee of 1 wei (Checked Nov 15, 2026, on bytes it signed and we did not send). Either way the receipt's `effectiveGasPrice` is the base fee: the priority fee is not charged, for a legacy transaction neither (blocks 477889 and 477898).
+- The estimate is enough on its own: for a transfer, `eth_estimateGas` was 4.8 percent above the gas it used, and a limit 0.5 percent above that use was mined (blocks 477814 and 477899). The 10 percent only raises what the sender must hold; unused gas is not charged.
+- To send a whole balance: VALUE = `cast balance` - GAS x GP. A transfer whose value was the whole balance was taken, mined as failed and charged its fee (block 477900; E45). The 0.1 tPOT existential deposit stays anyway: `eth_getBalance` leaves it out. A value exactly at that line was not sent; if the gas price may rise before the block, subtract GAS x MAXFEE instead.
 - For unattended use, `--password-file <file>` after `--account` gives the keystore password; keep that file outside the project.
-- A `value` that is not a multiple of 10000 wei is not a whole native unit; what the chain does with the remainder was not tested (E3).
+- A `value` of 0.001 tPOT + 1 wei was mined and the sender paid the exact wei; the receiver got 0.001 tPOT natively, and the 1 wei stays as dust that only the Ethereum side shows (block 477828; E3).
 - Windows: run the script in Git Bash or WSL. A command line longer than about 30000 characters is refused (E22).
 
-What can go wrong: `{"code":1010,"message":"Invalid Transaction"}` from `cast publish` (balance below gas limit x max fee plus value, E1); `execution reverted` from `cast estimate` (the call reverts: decode it, E26); `Invalid call: Payment` if you add a small `--gas-limit` to `cast estimate` or `cast call` (E27); a receipt that does not come (E15).
+What can go wrong: `{"code":1010,"message":"Invalid Transaction"}` from `cast publish` (balance below gas limit x base fee, a gas limit below what the transaction uses, or a max fee below the base fee: E1); receipt status 0 with the fee paid (the value did not fit, E45, or the call reverted, E9); `execution reverted` from `cast estimate` (the call reverts: decode it, E26); `Invalid call: Payment` if you add a small `--gas-limit` to `cast estimate` or `cast call` (E27); a receipt that does not come (E15; a waiting transaction is visible only on the node, recipe 9).
 
-Basis: **Assembled**. On Nov 14, 2026 the script ran up to the signing step, with the Treasury's `0x` form as `FROM` (an estimate needs no signature) and with an empty address (refused by the balance check), and `bash -n` passed. The signing lines (`cast mktx` with these flags, `cast keccak`, `cast publish --async`, then the receipt) are those that sent six contract calls with value as Ethereum transactions between Oct 19 and Nov 1, 2026, all with status 1. Those calls built their calldata in code and asked for the estimate with `eth_estimateGas` directly; on Nov 14, 2026 `cast calldata` and `cast estimate` gave the same calldata and estimate (within the few hundred gas the estimate drifts between calls).
+Basis: **Assembled**. On Nov 14, 2026 the script ran up to the signing step, with the Treasury's `0x` form as `FROM` (an estimate needs no signature) and with an empty address (refused by the balance check), and `bash -n` passed. The pending check and the balance line were changed after Nov 15, 2026 and passed `bash -n` only. The signing lines (`cast mktx` with these flags, `cast keccak`, `cast publish --async`, then the receipt) are those that sent six contract calls with value as Ethereum transactions between Oct 19 and Nov 1, 2026, all with status 1. Those calls built their calldata in code and asked for the estimate with `eth_estimateGas` directly; on Nov 14, 2026 `cast calldata` and `cast estimate` gave the same calldata and estimate (within the few hundred gas the estimate drifts between calls). The rule itself is Checked by our transactions of Nov 15, 2026, signed with ethers 6 (`recipes.md` recipe 8).
 
 Tool: `estimate_eth_transaction` gives the estimate, the limits, the 1010 verdict and the fields to copy for viem, ethers and cast.
 
@@ -148,11 +151,11 @@ FROM=$(cast wallet address --account "$ACCOUNT")
 INITCODE=$(node -p "require('./$ARTIFACT').bytecode.object + '${ARGS#0x}'")
 
 [ "$(cast chain-id --rpc-url "$RPC")" = 420420777 ] || { echo "not the V3 testnet"; exit 1; }
+node nonce-check.mjs "$FROM" > /dev/null || { echo "a transaction of this account waits, or the check failed (recipe 9)"; exit 1; }
 NONCE=$(cast nonce "$FROM" --rpc-url "$RPC")
-[ "$NONCE" = "$(cast nonce "$FROM" --block pending --rpc-url "$RPC")" ] || { echo "a transaction is pending"; exit 1; }
 EST=$(cast estimate --from "$FROM" --rpc-url "$RPC" --create "$INITCODE")   # includes the code deposit
 GP=$(cast gas-price --rpc-url "$RPC")
-read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, gas*fee].join(' ')")"
+read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, gas*g].join(' ')")"
 BAL=$(cast balance "$FROM" --rpc-url "$RPC")
 echo "init code $(( (${#INITCODE} - 2) / 2 )) bytes; estimate $EST gas at $GP wei; need $NEED wei, have $BAL wei"
 echo "expected address $(cast compute-address "$FROM" --nonce "$NONCE")"
@@ -174,15 +177,16 @@ The deposit, worked out:
 - Example: an ERC-20 of 1863 bytes on the testnet. Its records hold a code deposit of 115.98 tPOT ((1863 + 70) x 0.06) and a contract deposit of 42.444 tPOT (30 percent of 115.98, plus 7.65): 158.424 tPOT = 0.078 x 1863 + 13.11. Its 6 storage slots hold 23.049 tPOT more (6 x 3.8415). Checked Nov 14, 2026 from `revive.codeInfoOf` and `revive.accountInfoOf`.
 - Seen on the chain: the creation transaction in testnet block 354887 (legacy, nonce 0, 6336 bytes of runtime code) held 384.36 tPOT of code deposit ((6336 + 70) x 0.06) on `modlpy/reviv` and 126.7995 tPOT for the contract (30 percent of 384.36, plus 7.65, plus one slot), and paid a fee of 0.6466 tPOT. Its receipt's `gasUsed x effectiveGasPrice` was 511.806 tPOT, the sum of the three, and the contract is at the CREATE address of its sender and nonce. Block 346634 (nonce 3, 6376 bytes) matched the same way (Checked Nov 14, 2026 from the receipts and the node's events).
 - In gas: the deposit divided by the gas price. At 15695 wei per gas, 158.424 tPOT alone is about 1.01 x 10^16 gas.
-- The balance check asks for about 1.1 x 1.125 = 1.2375 times the estimated cost: about 196 tPOT for that ERC-20 before its storage. Measured on Nov 14, 2026 for init code that returns 1000 bytes of runtime code: estimate 5900202211390958 gas at 15685 wei, about 92.5 tPOT (91.11 of it deposit), and the check asked for 114.52 tPOT.
+- The balance check asks for 1.1 times the estimated cost (the 10 percent of headroom): about 174 tPOT for that ERC-20 before its storage. For init code that returns 1000 bytes of runtime code, the estimate on Nov 14, 2026 was 5900202211390958 gas at 15685 wei, about 92.5 tPOT (91.11 of it deposit), and the check asks for 101.80 tPOT.
+- Do not deploy with `forge script`: it takes its gas limits from its own simulation (329147 for that 1000-byte deployment), and the node refuses such limits (E39).
 - When the exact same runtime code is already stored on the chain, its code part, (L + 70) x 0.06, is not charged again; the lockup and the record are (Checked Nov 14, 2026: one byte of code that is already stored cost 8.928 tPOT instead of 13.188).
 
 - Windows: init code longer than about 15000 bytes makes a `cast` command line longer than about 30000 characters, which Windows refuses (E22). Sign such a transaction in a script (viem, ethers) instead.
 - A reverted creation still gets a `contractAddress` in its receipt, with no code there: check `status` (E9).
 
-What can go wrong: `execution reverted` from `cast estimate --create` (the constructor reverts: decode it, E26); `failed to run contract: ... InvalidInstruction` (a blob opcode, E31); `{"code":1010,"message":"Invalid Transaction"}` from `cast publish` (balance below gas limit x max fee, E1); a receipt that does not come (E15).
+What can go wrong: `execution reverted` from `cast estimate --create` (the constructor reverts: decode it, E26); `failed to run contract: ... InvalidInstruction` (a blob opcode, E31); `{"code":1010,"message":"Invalid Transaction"}` from `cast publish` (balance below gas limit x base fee, E1); a receipt that does not come (E15).
 
-Basis: the route is **Checked** on the chain (Nov 14, 2026), from other builders' transactions. This script is **Assembled** from 2c, with `--create`: on Nov 14, 2026 it ran up to the signing step (from the Treasury's `0x` form, with and without constructor arguments), `cast estimate --create` answered, `cast compute-address` gave the same address as the native dry run for the same account and nonce, and `bash -n` passed. We have not sent it: not proven are its acceptance as written and the final cost of one of our own deployments.
+Basis: the route is **Checked** on the chain (Nov 14, 2026), from other builders' transactions. This script is **Assembled** from 2c, with `--create`: on Nov 14, 2026 it ran up to the signing step (from the Treasury's `0x` form, with and without constructor arguments), `cast estimate --create` answered, `cast compute-address` gave the same address as the native dry run for the same account and nonce, and `bash -n` passed; the pending check and the balance line were changed after Nov 15, 2026 and passed `bash -n` only. We have not sent it: not proven are its acceptance as written and the final cost of one of our own deployments.
 
 Tool: `simulate_contract_deploy` (address, deposit, limits for the native path) and `estimate_eth_transaction` with no `to` (the creation transaction's gas and the 1010 check).
 
@@ -256,7 +260,7 @@ address 0x30ca0ab4156e37027841a1504e78aae6116468db, deposit 2091000000000000, de
 What can go wrong (each seen in a dry run on Nov 14, 2026):
 
 - `the constructor reverted: 0x...`: decode the revert data (E26); init code `0x60006000fd` gives this.
-- `Revive.StorageDepositLimitExhausted` (module 80, error 24): the deposit limit is below the peak deposit; a limit 1 base unit too low gave it (E7).
+- `Revive.StorageDepositLimitExhausted` (module 80, error 24): the deposit limit is below the peak deposit; a limit 1 base unit too low gave it (E7). A constructor that pays addresses that do not exist yet adds 0.1 tPOT of deposit for each; with a limit for the code alone the whole deployment failed this way (dry runs, Nov 15, 2026; E54). Dry-run with the real payees.
 - `Revive.OutOfGas` (module 80, error 3): the weight limit is too low; half the weight gave it (E10).
 - `Revive.StorageDepositNotEnoughFunds` (module 80, error 23): the account cannot pay the deposit (E7, E18).
 - An `artifact.bytecode.object` that is empty (`0x`) is an interface or an abstract contract; one with `__$...$__` placeholders needs its libraries linked first.
@@ -302,16 +306,77 @@ What you should see (Nov 15, 2026, a 1 tPOT transfer of type 2 for chain id 4204
 refused: Invalid Payment ({"Invalid":"Payment"})
 ```
 
-- `Payment` is the balance check of E1: the account cannot pay value + gas limit x base fee (`eth_gasPrice`), or does not exist yet. Fund it with at least value + gas limit x max fee (the safer rule of E1's fix), or lower a padded gas limit to the estimate + 10 percent (E1).
+- `Payment` is the balance check of E1: the sender cannot spend gas limit x base fee (`eth_gasPrice`), or does not exist yet. Fund it, or lower a padded gas limit to the estimate + 10 percent (E1). The value is not part of this check: a value that does not fit is taken and fails in the block (E45).
+- From a funded account the check also said `Payment` for a gas limit of 67501 (far below what the transaction uses) and for a max fee 1 wei below the base fee; each was then refused with the bare 1010 when sent (Nov 15, 2026). The transactions it called valid (`Ok`, priority 1) were mined (blocks 478128 to 478132).
 - The same transfer signed for chain id 1 printed `refused: Invalid Call ({"Invalid":"Call"})`. In our measurements of Nov 15, 2026 the same check said `Call` for a blob (type 3) and a set-code (type 4) transaction too (E1).
 - Bytes that are no Ethereum transaction at all (`0xdeadbeef`) also printed `Invalid Call`. `eth_sendRawTransaction` refuses such bytes itself, with `-32000` `Invalid transaction` (E35), so they never reach this check.
 - The check is the node's, not the Ethereum RPC's. A legacy transaction without a chain id got `Payment` from it, although the RPC refuses that transaction before the node sees it (E35).
-- An empty account fails the balance check first. A gas limit of 21000, a max fee of half the gas price and a nonce of 5, each signed by an empty account, all got `Payment`: from an empty account, the check does not show those mistakes.
-- `api.tx.revive.ethTransact(raw)` without signing gives the unsigned extrinsic; its hex starts with the length prefix, then `04`. The argument of `TaggedTransactionQueue_validate_transaction` is put together by hand: the source byte, the extrinsic with its length prefix, the block hash.
+- An empty account fails the balance check first: a gas limit of 21000, a max fee of half the gas price and a nonce of 5, each signed by an empty account, all got `Payment`.
+- `api.tx.revive.ethTransact(raw)` without signing gives the unsigned extrinsic; its hex starts with the length prefix, then `04`. The argument of `TaggedTransactionQueue_validate_transaction` is put together by hand: the source byte, the extrinsic with its length prefix, the block hash. The typed form `api.call.taggedTransactionQueue.validateTransaction('External', xt.toU8a(), bestHash)` makes the same check; given hex instead of `toU8a()` it traps (E55).
 
-Basis: **Proven**: on Nov 15, 2026 this exact script (with recipe 0 as `v3.mjs`) ran against the testnet, near block 475250, for three inputs: the type-2 transfer above (`Invalid Payment`), the same signed for chain id 1 (`Invalid Call`) and `0xdeadbeef` (`Invalid Call`). Each transaction came from a new random key held only in memory, whose account we checked was empty (balance 0, pending nonce 0) just before; nothing was sent. The other reasons above come from the same check, made the same way, during our measurements of Nov 15, 2026 (E1, E35). Not proven: the `valid` line (it needs an account that can pay), and what the check says for a funded account's other mistakes.
+Basis: **Proven**: on Nov 15, 2026 this exact script (with recipe 0 as `v3.mjs`) ran against the testnet, near block 475250, for three inputs: the type-2 transfer above (`Invalid Payment`), the same signed for chain id 1 (`Invalid Call`) and `0xdeadbeef` (`Invalid Call`). Each transaction came from a new random key held only in memory, whose account we checked was empty (balance 0, pending nonce 0) just before; nothing was sent. The other reasons above come from the same check, made the same way, during our measurements of Nov 15, 2026 (E1, E35). The funded cases and the `valid` answer come from our own test account later that day, through the typed form, each followed by the real submission.
 
 Tool: none of the chain tools makes this check yet; `estimate_eth_transaction` checks the balance rule before you sign.
+
+### 2g. An Assets token through its ERC-20 address (pUSD)
+
+What it does: buys pUSD (asset 7777, 6 decimals, minimum balance 10000 units) with tPOT in the chain's swap pool, then uses it from Ethereum keys at its ERC-20 address `0x00001e6100000000000000000000000000010000` (2b): approve, transferFrom, and a permit that the owner signs and another account sends.
+
+Step 1, buy the token on the native side (with `api`, `pair` and the send of recipe 1 in `recipes.md`); quote first:
+
+```js
+const path = ['Native', { WithId: 7777 }];
+const amountIn = 10n ** 14n; // 1 tPOT
+const quote = await api.call.assetConversionApi.quotePriceExactTokensForTokens(path[0], path[1], amountIn, true);
+if (quote.isNone) throw new Error('no quote: the pool cannot serve this pair');
+const out = quote.unwrap().toBigInt(); // token units
+const to = process.argv[2]; // 5...: for an Ethereum key, its fallback form (recipe 6), holding some tPOT already (E17)
+const swap = api.tx.assetConversion.swapExactTokensForTokens(path, amountIn, out - out / 10n, to, true); // accept 90 percent of the quote at least; keep the sender alive
+```
+
+Step 2, approve and transferFrom with `send-eth.sh` (2c), each signed by its own keystore:
+
+```sh
+TOKEN=0x00001e6100000000000000000000000000010000
+TO=$TOKEN DATA=$(cast calldata "approve(address,uint256)" $SPENDER 1000000) ACCOUNT=owner bash send-eth.sh
+TO=$TOKEN DATA=$(cast calldata "transferFrom(address,address,uint256)" $OWNER $RECEIVER 10000) ACCOUNT=spender bash send-eth.sh
+cast call $TOKEN "allowance(address,address)(uint256)" $OWNER $SPENDER --rpc-url https://test-evm-rpc-v3.portaldot.dev
+```
+
+Step 3, a permit: the owner signs it, the spender sends it (`TO=$TOKEN DATA=$(node permit.mjs $SPENDER 5000) ACCOUNT=spender bash send-eth.sh`):
+
+```js
+// permit.mjs: the owner signs an EIP-2612 permit for an Assets token and prints the calldata. npm install ethers@6
+// Usage: node permit.mjs <spender 0x address> <amount in token units>
+import { ethers } from 'ethers';
+
+const TOKEN = '0x00001e6100000000000000000000000000010000'; // pUSD, asset 7777
+const provider = new ethers.JsonRpcProvider('https://test-evm-rpc-v3.portaldot.dev');
+const owner = ethers.Wallet.fromPhrase(process.env.V3_TEST_PHRASE); // the owner's TEST key
+const [spender, value] = [process.argv[2], BigInt(process.argv[3])];
+const token = new ethers.Contract(TOKEN, ['function name() view returns (string)', 'function nonces(address) view returns (uint256)',
+  'function permit(address,address,uint256,uint256,uint8,bytes32,bytes32)'], provider);
+// The domain: name() is the asset's metadata name, version "1". The token has no eip712Domain().
+const domain = { name: await token.name(), version: '1', chainId: 420420777n, verifyingContract: TOKEN };
+const types = { Permit: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }, { name: 'value', type: 'uint256' },
+  { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] };
+const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+const nonce = await token.nonces(owner.address);
+const sig = ethers.Signature.from(await owner.signTypedData(domain, types, { owner: owner.address, spender, value, nonce, deadline }));
+console.log(token.interface.encodeFunctionData('permit', [owner.address, spender, value, deadline, sig.v, sig.r, sig.s]));
+```
+
+What we saw on Nov 15, 2026, from Ethereum keys of our own test accounts (ethers 6, gas limit = the estimate, max fee 2 x base fee):
+
+- The swap of 1 tPOT paid 708367 units (0.708 pUSD), exactly the quote (block 478194).
+- `approve(spender, 1000000)` (block 478195): the owner's tPOT fell by 0.1187, of which 0.1 was reserved as the approval's deposit and 0.0187 was the fee. `approve(spender, 0)` gave the 0.1 back (block 478197). So the owner needs 0.1 tPOT on the Ethereum side beyond the fee, also for a permit (E41).
+- `approve(spender, 2^256 - 1)` is stored as 2^128 - 1, and `transferFrom` lowers it like any allowance (blocks 478199 and 478201): treat an allowance >= 2^128 - 1 as unlimited (E43).
+- `transferFrom` cost the spender 0.0219 tPOT (block 478201). The permit cost the sender 0.0348 tPOT, moved `nonces(owner)` from 0 to 1, replaced the existing approval, and took its 0.1 tPOT deposit from the owner (block 478203).
+- Never send tPOT with a token call: it stays on the token address (E44). A transfer that would leave less than 10000 units moves the whole balance, and its Transfer log shows the amount asked (E42). A failed call answers `failed to run contract: ...` with the module error, and a contract that calls the token gets no reason (E40).
+
+Basis: **Proven** by those transactions (blocks 478194 to 478206), signed with @polkadot/api 17 (the swap, inside a `Utility.batchAll` with a transfer) and ethers 6 (the token calls). The snippets are **Assembled** from that code; we sent the token calls with ethers, not through `send-eth.sh`. They passed `node --check` and `bash -n` only. The permit's domain equals the token's `DOMAIN_SEPARATOR()` (Checked Nov 15, 2026, by dry run).
+
+Tools: `convert_address` recognises a token's ERC-20 address; `estimate_eth_transaction` gives the gas, but the 0.1 tPOT deposit of an approval comes on top of it.
 
 ---
 
@@ -380,6 +445,7 @@ What you should see before signing (Nov 14, 2026, the Treasury as `from`, an ERC
 - The deposit limit must cover the peak (`maxStorageDeposit`) even when the net charge is 0 (E7). A call that only frees storage shows a refund, and the script then passes the peak, which may be 0. A limit of 0 passed a dry run of a call that stores nothing, and gave `StorageDepositLimitExhausted` for `approve` (Checked Nov 14, 2026). Freeing storage was proven only through a call whose deposit netted 0 (Oct 20, 2026).
 - Events from this call are not in `eth_getLogs`; read them from the node (recipe 5c, E6).
 - Dry-run again right before sending: limits read earlier can change with the contract's state.
+- Code that pays addresses that do not exist yet adds 0.1 tPOT of deposit for each new account. We measured it in dry runs of deployments (E54), not of `revive.call`; expect the same here, and dry-run with the real payees.
 
 What can go wrong: a module error such as `Revive.StorageDepositLimitExhausted`, `Revive.OutOfGas` or `Revive.TransferFailed` (a value larger than the balance) (E7, E10); `Balances.InsufficientBalance`; a revert (decode the data, E26); `1010: Invalid Transaction: Inability to pay some fees` at submission (E1).
 
@@ -430,14 +496,14 @@ DATA=0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c2074657
 bash send-eth.sh
 ```
 
-What you should see before signing (Nov 14, 2026): `estimate 1055685474923 gas, gas price 15685 wei; gas limit 1161254022415, max fee 17645; need 20490327225512675 wei, ...`: a cost of about 0.0166 tPOT, and the check asks for about 0.0205 tPOT.
+What you should see before signing (Nov 14, 2026; `need` worked out under the rule of Nov 15): `estimate 1055685474923 gas, gas price 15685 wei; gas limit 1161254022415, max fee 17645; need 18214269341579275 wei, ...`: a cost of about 0.0166 tPOT, and the check asks for about 0.0182 tPOT.
 
 Step 3, check both sides with recipe 5a (`eth-tx-both-sides.mjs` in `recipes.md`):
 
 - The receipt shows `status 0x1`, `gasUsed 0`, `effectiveGasPrice 0` and no logs.
 - On the node, the block with the same number holds an unsigned `revive.ethTransact` extrinsic carrying the raw transaction. Its events show the call ran as the account that holds the `0x` address's balance (for an Ethereum key, its fallback `5...` account, recipe 6): `balances.Withdraw`, then `system.Remarked { sender }` or `balances.Transfer { from, to, amount }`, then `transactionPayment.TransactionFeePaid` and `system.ExtrinsicSuccess`.
 
-What can go wrong: the estimate answers `Failed to dispatch call: ...` when the native call itself would fail, for example `Token(FundsUnavailable)` when the account cannot pay an amount the call moves, or `BadOrigin` for a call that needs root (E29). It answers `Invalid call: Call` when the transaction carries a value, or when `data` is missing or not a call (E29). Error 1010 when the balance is below gas limit x max fee (E1). The fee is paid by the account that holds the `0x` address's balance, so fund that account (its fallback `5...` form for an Ethereum key). A call that fails shows its error in the node's events, not in the receipt; read them (recipe 5b, E10).
+What can go wrong: the estimate answers `Failed to dispatch call: ...` when the native call itself would fail, for example `Token(FundsUnavailable)` when the account cannot pay an amount the call moves, or `BadOrigin` for a call that needs root (E29). It answers `Invalid call: Call` when the transaction carries a value, or when `data` is missing or not a call (E29). Error 1010 when the balance is below gas limit x base fee (E1). The fee is paid by the account that holds the `0x` address's balance, so fund that account (its fallback `5...` form for an Ethereum key). A call that fails when it runs is mined with receipt status `0x0`, `gasUsed 0` and `effectiveGasPrice 0`, yet the fee is paid (0.0162 tPOT for a transfer above the balance, block 477826; E46); its error is in the node's events (recipe 5b, E10).
 
 Basis: **Proven** for the route: two transactions from an Ethereum key on Nov 13, 2026, testnet blocks 452626 (`system.remarkWithEvent`, the first bytes above) and 452633 (`balances.transferKeepAlive` of 0.01 tPOT). Both were type 2 transactions with a priority fee of 0 and a max fee of 18140 wei (the gas price plus one eighth); gas limits of 1129572168498 and 1136535970904; fees of 0.0158 and 0.0159 tPOT; receipts with `gasUsed 0`; the effects in the node's events. Read again on Nov 14, 2026: the remark transaction's `data` is exactly the first bytes above, and keccak-256 of its raw transaction is its hash. The scripts are **Assembled**: on Nov 14, 2026 they ran up to the signing step (from the Treasury's `0x` form, and from an empty address, which the balance check refused). Not proven: sending a value with such a call (its estimate is refused, E29), sending `utility.batchAll` this way, and calls that need another origin, such as root. `eth_estimateGas` for `utility.batchAll` through the pallets address answered an estimate (Checked Nov 14, 2026: from the Treasury's `0x` form, data `0x01020400071468656c6c6f`, a batch of one `system.remarkWithEvent("hello")`, about 0.0136 tPOT); nothing was sent. That a sent batch works is Reported, not checked.
 

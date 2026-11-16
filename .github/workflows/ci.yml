@@ -1,0 +1,110 @@
+# Checks every push and pull request to main, and runs by hand from the Actions tab
+# ("Run workflow"). It only reads the repository and needs no secrets.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        shell: bash
+        working-directory: server-src
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: server-src/package-lock.json
+      # The lockfile was written by npm 11.6.2. npm 10, which comes with Node 22, refuses it ("Missing:
+      # smoldot@2.0.26 from lock file"), so every job installs with npm 11.6.2.
+      - name: Install the locked packages
+        run: npx --yes npm@11.6.2 ci --no-audit --no-fund
+      - name: Type check
+        run: npm run typecheck
+      - name: Unit tests (no network)
+        run: npm run test:unit
+      - name: The generated files match the knowledge files
+        run: node scripts/gen-knowledge.mjs --check
+      - name: The committed bundle is what this source builds
+        run: node build.mjs --outdir="$RUNNER_TEMP/fresh-build" --check
+      - name: Smoke test of the committed bundle (no network)
+        run: npm run test:smoke
+
+  # Node 20 cannot run the TypeScript source, so only the built server is checked there.
+  # The smoke test needs no packages, so nothing is installed.
+  smoke-node-20:
+    name: Smoke test (${{ matrix.os }}, Node 20)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: server-src
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Smoke test of the committed bundle (no network)
+        run: node test/smoke.test.mjs
+
+  # Calls every tool of the committed bundle against the public testnet (and the mainnet for a few
+  # calls). It runs only by hand, to spare the public nodes, and a failure here does not fail the
+  # run: the nodes can be down while the code is fine.
+  end-to-end:
+    name: End-to-end test against the public nodes (by hand only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+        working-directory: server-src
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server-src/package-lock.json
+      - name: Install the locked packages
+        run: npx --yes npm@11.6.2 ci --no-audit --no-fund
+      - name: Every tool over stdio (legacy protocol mode of the MCP client)
+        run: npm run test:server
+      - name: Every tool over stdio (auto protocol mode of the MCP client)
+        if: success() || failure()
+        run: node test/server.test.mjs --era=auto

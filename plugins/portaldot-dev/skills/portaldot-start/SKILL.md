@@ -1,0 +1,115 @@
+---
+name: portaldot-start
+description: Takes a developer from an idea to a first working result on the Portaldot V3 testnet - live checks first, at most three questions with defaults, the cost of every step (deposits included) before any code, a short plan with a dry run before and a check after every send, then one step at a time. Use it when someone wants to build, start, prototype or plan a project on Portaldot, or asks where to begin - a token, NFTs, a swap, payments or payouts, an escrow, a multisig or treasury, staking, a dApp, a bot or indexer, stored data, a bridge or an oracle.
+mcp-prompt: start_project
+---
+
+# Start a Portaldot V3 project
+
+Your job: take the developer from an idea to a first working result on the V3 testnet (a transaction of theirs in a finalized block), then to the project's first real result, without the mistakes that cost tokens or days here. Three gates hold throughout: no code before the money check, no send before its dry run passes, no next step before the check after it passes. Take facts from the tools and the knowledge pack, never from memory or Ethereum habits. The 16 tools only read and dry-run; the developer, or a script of theirs that reads its key from its own environment, signs and sends. An id in brackets, such as [errors/E12] or [recipes/1], is a read_guide topic: `read_guide {"topic": "errors/E12"}`.
+
+The idea is in the developer's words, or after "What I want to build:" at the end of this text. With none, ask for it in one sentence and run the chain check of step 1 meanwhile.
+
+## 1. At once, before any question
+
+Run these together, and report what they found in your first message:
+
+- `get_chain_facts`: blocks are coming, safe mode is off, no call is paused, the gas price now. If blocks have stopped, do only what sends nothing [networks/testnet-halts].
+- The rules: `read_guide {"topic": "portaldot-v3/rules-prevent-costly-mistakes"}`, unless the portaldot-v3 skill is loaded. They hold for every step below.
+- The blueprint that fits, from the table: `read_guide {"topic": "blueprints/<id>"}`. Two fit (a mint page is NFTs and a page): read both, and plan from the one that holds the money. None fits: `read_guide {"query": "<their words>"}` and `search_chain {"query": "<the job>"}`, take the closest blueprint, and say which parts do not fit.
+- The reads that the blueprint's plan starts with: the token, pool, collection or module the idea names (`read_storage`, `search_chain`).
+
+| The idea mentions | Blueprint id |
+|---|---|
+| token, coin, points, shares, stablecoin, ERC-20 | `blueprints/token` |
+| NFT, collectible, ticket, badge, certificate, game item | `blueprints/nft-collection` |
+| swap, DEX, pool, liquidity, price from a pool | `blueprints/swap-dex` |
+| pay, tip, invoice, checkout, payroll, airdrop, payout, reward, vesting | `blueprints/payments-payouts` |
+| escrow, milestone, held until, refund, sealed bid, savings circle | `blueprints/escrow-conditional-payments` |
+| multisig, treasury, shared funds, approvals, spending limit, proxy | `blueprints/multisig-treasury` |
+| stake, nominate, nomination pool, staking rewards | `blueprints/staking` |
+| web app, front end, MetaMask, wallet, gasless | `blueprints/dapp-front-end` |
+| bot, indexer, explorer, monitor, alert, keeper, "every day" | `blueprints/bot-indexer-keeper` |
+| store, anchor, notarize, file hash, receipt, record | `blueprints/data-storage-records` |
+| bridge, light client, cross-chain, proof, oracle, price feed | `blueprints/bridge-oracle-proofs` |
+
+## 2. Ask once: at most three questions
+
+One message: two lines on what the checks found, then the questions, each with its default. Skip what the idea already answers; never ask what a tool can read or what would not change the plan. A skipped question, or "just start": use the default and say so.
+
+1. The blueprint's "Decide" question, with its default.
+2. "Will people sign with MetaMask (0x addresses), a native Polkadot-style wallet (5... addresses), or both?" Default: MetaMask for people in a browser; native 5... accounts for the project's own deployer, scripts and bots.
+3. "Which test account will send? Its public address only, never a key or a recovery phrase." Default: until one is given, dry-run every step with the Treasury as the sender, `5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z` (`0x8ddee436166f311ddeed36d714b08f512670d16e`) [addresses/module-accounts]; it holds no pUSD, so a token step needs the real sender [evm-checks/3]. A developer with no test account makes a fresh test key in their own wallet or tool, for testnet tPOT only [portaldot-v3/rules-prevent-costly-mistakes].
+
+Choose the rest and say so: Node 20 or newer with @polkadot/api 17, Foundry for Solidity [recipes/before-start], ethers 6 for a page [contracts/tools], the testnet, small test amounts.
+
+## 3. The money check, before any code
+
+1. `get_account` on each sending address: free, reserved, frozen, and whether a transaction still waits. A MetaMask key's tPOT sits on its fallback 5... form, which `convert_address` names [errors/E4].
+2. Price each sending step with its dry run: `simulate_contract_deploy` for a contract (before the code exists, 0.078 x L + 13.11 tPOT for L bytes of runtime code [amounts-and-fees/deploying-contract]), `simulate_contract_call`, `encode_call` with `"sender"` for a native call, `estimate_eth_transaction` for an Ethereum transaction.
+3. Add the deposits that native modules hold: no fee estimate or gas figure shows them [amounts-and-fees/gas-includes-deposits, amounts-and-fees/token-approval-deposits], and `encode_call`'s balance line counts only the fee, the amounts and 0.1 tPOT.
+
+| Held by the chain (testnet) | tPOT | Comes back | Topic |
+|---|---|---|---|
+| new contract code of L bytes | 0.078 x L + 13.11 | code part by `Revive.removeCode` once no contract uses it; the rest not known | [amounts-and-fees/deploying-contract], [open-questions/5] |
+| each new 32-byte contract slot | 3.8415, from the sender | when cleared, in our experience; disputed | [amounts-and-fees/contract-storage-slot] |
+| each new account that contract code pays | 0.1, from the sender | not known | [errors/E54] |
+| an asset; its metadata | 1; 0.1 + 0.06 per byte | not in these notes | [native-modules/everyday-jobs-calls] |
+| each approval or permit of an asset | 0.1, from the owner | on `approve(spender, 0)` | [amounts-and-fees/token-approval-deposits] |
+| an NFT collection; each item | 1; 0.1 | not in these notes | [native-modules/everyday-jobs-calls] |
+| an open multisig operation | 5.43 + 1.92 x threshold, from the opener | when it runs or is cancelled | [native-modules/multisig-rules] |
+| each proxy | 2.61 | on `Proxy.removeProxy` | [native-modules/proxy-rules] |
+| a staking bond | the bond | about 168 days after unbonding | [native-modules/staking-numbers] |
+
+4. Say it in one line, each number marked as read live (which tool) or from the notes (which topic): "You hold A tPOT; the first result needs B; the whole plan about C." Then the verdict: GO; GO by a cheaper route (the blueprint's native route, or smaller code [contracts/build-settings]); or SHORT: do now everything before the expensive step (code, dry runs, cheap sends), and say how much to ask for (C less A, from the dry runs). There is no self-serve faucet; builders report getting tPOT by a ticket on the chain team's Discord, to a 5... address, for MetaMask its fallback form [networks/test-tokens].
+
+## 4. Choose the approach: what the chain already has comes first
+
+For each piece of the idea (the money, who holds it, the rules, the payouts, the record, the screens), take the first line that fits:
+
+1. A native module does the job: use it. Assets tokens (each with an ERC-20 address), the AssetConversion pools, Nfts, Multisig, Proxy, `Utility.batchAll`, TransactionStorage: a fee and a small deposit, and no code to deploy [native-modules/everyday-jobs-calls].
+2. A rule must run as code that nobody can skip (a deadline, a cap, a formula, logic inside a transfer), or MetaMask users or contracts must hold NFTs (no ERC-721 address is known for Nfts [contracts/separate-token-worlds]): a contract. Say why in one sentence, and what it will hold.
+3. Both: the contract keeps the rules, and Assets tokens reach it at their ERC-20 addresses [contracts/tokens-assets-module-seen].
+
+Never plan on what this chain lacks: Multicall3, the CREATE2 deployer, Safe, Permit2, EntryPoint [errors/E19]; a timer started by an account, since the Scheduler refuses a signed origin [native-call-errors/scheduler]; an EVM explorer or source verification [errors/E20]; an Ethereum RPC on the mainnet [networks/mainnet].
+
+Two ways to reach a native module: sign the call from a native account (@polkadot/api [recipes/1]; polkadot-api or dedot [recipes/1c]); or, from a 0x key, send an Ethereum transaction to the pallets address `0x6d6f646c70792f70616464720000000000000000` with the call bytes from `encode_call` and value 0 [recipes-contracts/4]. That second way was sent only for a remark and a transfer; other calls rest on dry runs [native-modules/native-call-0x-account].
+
+The contract route: build small [recipes-contracts/2a]; `simulate_contract_deploy` with `"artifact_path"` (the address, the deposit part by part, the limits); deploy on the native path, which is proven [recipes-contracts/2e], or by Ethereum transaction, seen on the chain but not sent by us [recipes-contracts/2d], never with `forge script` [errors/E39]; then `simulate_contract_call` before each call. For new work, Solidity rather than ink! [contracts/ink]. Root can replace a contract's code: say so in any promise a contract makes [networks/admin-key].
+
+## 5. The plan
+
+At most eight numbered steps, one line each: what is done | recipe or tool | sender | cost (fee + held) | the dry run before | the check after. For example:
+
+`1. Prove the setup | recipes/1, 1 tPOT to a second test account | <dev 5...> | about 0.015 tPOT fee | encode_call with sender: accepted | get_transaction: finalized; get_account of the payee`
+
+- Step 1 is the smallest send that proves the key, the chain, the nonce and finality, made useful: fund a test account that later steps need, or a `System.remarkWithEvent` that names the project. It is the first working result.
+- Then the blueprint's steps: early, the cheapest step that tests the riskiest assumption; a deployment only after its dry run gave the exact deposit. Read-only steps say "read-only".
+- Show the plan with the money line, then write the code of step 1 unless the developer wants changes. Nothing is sent until the developer runs it.
+
+## 6. Build and send one step at a time
+
+Write the code from the step's recipe (`read_guide {"topic": "<recipe id>"}`) into the developer's project; a native call with no recipe of its own takes the send code of [recipes/1] with the call line that `describe_item` gives. It reads its key from its own environment (`V3_TEST_PHRASE` in the recipes, or a Foundry keystore for an Ethereum key), or leaves signing to the user's wallet. Never ask for, take, store or print a key or phrase.
+
+For every send:
+
+1. In code: the genesis hash and the chain id, refused on a mismatch [recipes/0].
+2. Nothing of the sender waits (`get_account`); sign with the nonce from `system_accountNextIndex`, set explicitly [errors/E12].
+3. The exact call's dry run again, just before sending: state moves between blocks [native-call-errors/measured]. `Utility.batch`, `Proxy.proxy`, the multisig approval that runs the call and `Sudo.sudo` show only their outer result (`Utility.batchAll` names the inner error): dry-run the inner call alone from the account it runs as [errors/E29].
+4. An Ethereum transaction: gas limit = the estimate (+ up to 10 percent), max fee = gas price + one eighth, priority fee 0; `estimate_eth_transaction` must say TAKEN [amounts-and-fees/rule-ethereum-transaction].
+5. The hash into the record, then the developer submits. Wait for finality, about 2 blocks; not final after 10 minutes means pending, not failed: settle it with recipe 9 before any new send [recipes/9].
+6. Check on the chain, not in the script's output: `get_transaction` (finalized; the result from the events: `MultisigExecuted`, `Proxy.ProxyExecuted`, `Revive.EthExtrinsicRevert`, the receipt status), then the state the step should change (`read_storage`, `get_account`, `simulate_contract_call`, `get_contract_events`).
+7. Any failure: `explain_error` with the exact text before changing code. Never send to see what happens: a transaction that fails in its block uses its nonce and pays its fee [errors/E45, errors/E46].
+
+The record: one file in the project, such as `portaldot-record.md`, never with a key. The network and its genesis hash, then one line per send: date, step, sender, nonce, hash (written before the send), block, finalized or not, what was created (address, asset or collection id, multisig account), fee and deposit, the event that proves it. A later session settles an unknown outcome from it [recipes/9].
+
+## 7. Say the limits plainly
+
+- Before a step relies on a behaviour, look for it under the blueprint's "Not known" and in [open-questions/not-known]; say when a step rests on dry runs only.
+- The testnet has no self-serve faucet [networks/test-tokens], has 2 validators [networks/blocks-finality], and stopped twice in Oct 2026 [networks/testnet-halts].
+- Run every send on the testnet first [portaldot-v3/rules-prevent-costly-mistakes]. The mainnet (POT) has no public Ethereum RPC, and on Nov 14, 2026 it held no contracts, assets, NFT collections or pools; some NFT and metadata deposits differ [networks/mainnet, native-modules/69-modules]. Go there only when the developer decides, after the testnet run, with the checks of rule 10.
+- In each answer, say which values were read live, with which tool, and which come from the notes.
+
+## The blueprints
+
+- `references/blueprints.md`: one plan per kind of project, read as `blueprints/<id>`: token, NFT collection, swap or DEX, payments and payouts, escrow and conditional payments, multisig or treasury, staking, dApp front end, bot, indexer or keeper, data storage and records, bridge, oracle or proofs.

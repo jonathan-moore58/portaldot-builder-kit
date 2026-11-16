@@ -94,9 +94,9 @@ test('both kinds of revert data are decoded, without a connection', async () => 
   assert.equal(connects, 0);
 });
 
-test('a 1014 text gives the standard meaning, marked as not measured, and E12', async () => {
+test('a 1014 text gives the measured meaning and E12', async () => {
   const r = await explain('1014: Priority is too low: (2 vs 2)');
-  assert.match(r.text, /1014 Priority is too low: .*standard Substrate meaning, not measured by us on this chain/);
+  assert.match(r.text, /1014 Priority is too low: .*priorities of the waiting transaction and of the new one.*measured on this chain on Nov 15, 2026/);
   assert.equal(bestOf(r.text), 'E12');
   assert.match(r.text, /Next: get_account/);
   assert.equal(connects, 0);

@@ -234,10 +234,10 @@ test('with a 0x sender on the testnet: route b with the gas rule; a native accou
   const [est, price, limit, maxFee] = m.slice(1).map(BigInt);
   assert.equal(limit, est + est / 10n);
   assert.equal(maxFee, price + price / 8n);
-  assert.match(r.text, new RegExp(`gas limit x max fee = \\S+ tPOT \\(${limit * maxFee} wei\\)`));
+  assert.match(r.text, new RegExp(`to be taken by the node: gas limit x base fee = \\S+ tPOT \\(${limit * price} wei\\)`));
   const balance = BigInt(/balance now \(eth_getBalance[^)]*\): \S+ tPOT \((\d+) wei\)/.exec(r.text)?.[1] ?? '-1');
   assert.ok(balance >= 0n, r.text);
-  assert.match(r.text, balance >= limit * maxFee ? /enough to be accepted: yes/ : /enough to be accepted: NO, short by \S+ tPOT \(\d+ wei\)/);
+  assert.match(r.text, balance >= limit * price ? /verdict: TAKEN, and it should succeed/ : /verdict: REFUSED with error 1010/);
   assert.match(r.text, /Next: estimate_eth_transaction/);
 
   const own = await run({ call: 'System.remarkWithEvent', args: ['hi'], sender: TREASURY_H160 });

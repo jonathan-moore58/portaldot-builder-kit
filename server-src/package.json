@@ -1,6 +1,6 @@
 {
   "name": "portaldot-dev-server",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Read-only Portaldot V3 chain tools for coding assistants (MCP server). By the Bridge Zero team.",
   "license": "Apache-2.0",
@@ -15,8 +15,10 @@
     "test:unit": "node --test \"test/unit/*.test.ts\"",
     "test:live": "node --test --test-concurrency=1 \"test/live/*.test.ts\"",
     "test:server": "node test/server.test.mjs",
+    "test:smoke": "node test/smoke.test.mjs",
+    "check:bundle": "node build.mjs --check",
     "gen:metadata": "node scripts/gen-metadata.mjs",
-    "test": "npm run typecheck && npm run test:unit"
+    "test": "npm run typecheck && npm run test:unit && npm run test:smoke"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",

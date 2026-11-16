@@ -64,7 +64,7 @@ Checked Nov 14, 2026 from block timestamps; the same times were noted in October
 
 ## The gas price on each network
 
-- Testnet: `eth_gasPrice` was 38840 wei per gas on Oct 19, 2026 and about 15700 wei on Nov 14, 2026 (it fell from 15825 to 15575 during that day). Checked on each date; `amounts-and-fees.md` has the history.
+- Testnet: `eth_gasPrice` was 38840 wei per gas on Oct 19, 2026, about 15700 wei on Nov 14, 2026 (it fell from 15825 to 15575 during that day) and 15130 to 15145 wei on Nov 15, 2026. Checked on each date; `amounts-and-fees.md` has the history.
 - Mainnet: 5000 wei per gas on Nov 14, 2026, read through the node: `api.call.reviveApi.gasPrice()`, or the RPC `state_call` with `ReviveApi_gas_price` and `0x` (Checked). There is no `eth_gasPrice` to ask on the mainnet.
 - The fee in tokens is about the same on both networks, so the gas numbers differ: an empty call from the Treasury's `0x` form to itself costs about 0.0123 tokens on both, estimated at 2460498146384 gas on the mainnet and 784539579017 on the testnet (Checked Nov 14, 2026; `evm-checks.md` section 9). Gas figures do not carry over between the networks.
 
@@ -76,13 +76,86 @@ Checked Nov 14, 2026 from block timestamps; the same times were noted in October
 ## Node and RPC surface
 
 - Node: `PortaldotV3 Node` version `3.0.0-dev-fddd43141f2` on both networks (Checked Nov 14, 2026).
-- The node answers 135 RPC methods on both networks (Checked Nov 14, 2026), among them `archive_v1_*`, `chainHead_v1_*`, `grandpa_proveFinality`, `state_getReadProof`, `state_getChildReadProof`, `state_call`, `payment_queryInfo`, `beefy_*` and `mmr_*`. It answers no `eth_*` method, and `rpc_modules` is not supported.
+- The node lists 135 RPC methods on both networks (Checked Nov 14, 2026); "The 135 methods" below groups them. It answers no `eth_*` method, and `rpc_modules` is not supported.
   - Older counts: 125 methods on Oct 16, 2026; two surveys on Nov 13, 2026 counted 135 and 140.
-- Archive state: both nodes served state at block 1 on Nov 13 and Nov 14, 2026 (Checked). Use `api.at(blockHash)` for old state.
+- Archive state: both nodes served state at block 1 on Nov 13 and Nov 14, 2026, and the testnet node again on Nov 15, 2026 (read proofs and `archive_v1_*` calls at block 1) (Checked). Use `api.at(blockHash)` for old state.
 - Ethereum RPC client: `eth-rpc/main-fddd431` (Checked Nov 14, 2026). On Nov 14, 2026 it served `eth_getBalance` and `eth_call` at blocks from 1 to the head, and block 1 itself. In October 2026 it refused state older than about 256 blocks; see `open-questions.md` item 1. `evm-checks.md` lists the methods it answers.
 - `eth_getLogs` has no block-range limit: block 0 to the latest answered, in under a second with an address filter. A `fromBlock` after the `toBlock` answers `{"code":-32000,"message":"Failed to filter logs"}` (Checked Nov 14, 2026; `evm-checks.md` section 6).
 - Request speed (Experience): one request at a time over the WebSocket gives about 19 answers a second; HTTP batches of 50 requests read 300 blocks in about 3 seconds. Keep load modest: these are shared public nodes.
-- All public RPC endpoints are on `*.portaldot.dev` and run by the chain team (Checked Nov 13, 2026). A third-party gateway seen on Nov 13, 2026 forwards to these same hosts.
+- All public RPC endpoints are on `*.portaldot.dev` and run by the chain team (Checked Nov 13, 2026). A third-party gateway seen on Nov 13, 2026 forwards to these same hosts. Both testnet endpoints answer through Cloudflare, and the Ethereum RPC has nginx 1.24.0 behind it (Checked Nov 15, 2026, from the response headers and an error page).
+
+### Limits of the public endpoints
+
+Checked Nov 15, 2026 on the testnet. CORS, the batch of 101, the follow limit and the idle socket were measured twice; the rest once.
+
+| | Ethereum RPC | Substrate node |
+|---|---|---|
+| CORS | `access-control-allow-origin: *` on preflight and on POST, with `allow-headers` and `allow-methods` `*` on preflight; the WebSocket upgrade with another site's `Origin` was accepted | the same |
+| JSON-RPC batch | 101 calls answered whole (the largest tried) | the same |
+| Request body | 1,000,128 bytes passed; 2,000,128 bytes got HTTP 413 as an nginx HTML page (`<title>413 Request Entity Too Large</title>`, `nginx/1.24.0 (Ubuntu)`), not JSON-RPC (E52) | not measured |
+| WebSocket connections | 10 held open together by one client; more not tried | the same |
+| Subscriptions on one connection | 20 `eth_subscribe` `["newBlockHeaders"]` | 20 tried, all accepted except a 5th `chainHead_v1_follow`: `{"code":-32800,"message":"Maximum number of chainHead_follow has been reached"}` (E52) |
+| Idle WebSocket | the server pings every 30 s; a socket idle for 125 s stayed open | the same |
+| Rate limits | no 429, 503 or rate-limit header in 264 requests; none provoked | the same |
+
+- A page on any origin can call either endpoint directly. Keep each HTTP request under 1 MB.
+- The largest answers met arrived whole: `state_getMetadata` (1,123,870 bytes over HTTP, and in one WebSocket message) and `grandpa_proveFinality` of block 1 (about 1.8 MB of JSON). Set long timeouts and large frame limits.
+
+### Proofs and finality data
+
+Checked Nov 15, 2026 on the testnet node.
+
+| Method | What it gave |
+|---|---|
+| `state_getReadProof` | proofs at the finalized block, 300 and 3000 blocks back, and at block 1. The nodes hash to the Substrate header's `stateRoot`; the Ethereum block's `stateRoot` is not a state root (`evm-checks.md` section 5) |
+| `state_getChildReadProof` | contract storage proofs at the finalized block and 3000 back. The child key is `:child_storage:default:` + the `trieId` from `revive.accountInfoOf`; `childstate_getKeysPaged` lists the keys |
+| `grandpa_proveFinality` | proofs at every depth tried: 2.5 to 2.7 kB 5 blocks back, 752,767 bytes 3000 back, 908,075 bytes for block 1 |
+| `grandpa_roundState`, `grandpa_subscribeJustifications` | answer: set id 134, threshold weight 2 of 2; 7 or 8 justifications in 30 to 40 s |
+| `beefy_getFinalizedHead`, `beefy_subscribeJustifications` | answer: the BEEFY head was 3 and 5 blocks behind GRANDPA in two samples; BEEFY began at block 1 (`BeefyApi_beefy_genesis`) |
+| `mmr_root` | answers |
+| `mmr_generateProof` | `{"code":8011,"message":"Leaf was not found","data":"LeafNotFound"}` for every block tried, recent and old; `MmrApi_generate_proof` through `state_call` fails with a trap ("local_storage_get can be called only in the offchain call context"). The node probably runs without offchain indexing (our reading): no MMR proofs from it (E52) |
+| `chain_getBlock` justifications | `null` in recent blocks; blocks 477696 and 477184 held a GRANDPA justification (the first also a BEEFY one), as JSON arrays of byte values, not hex. Subscribe instead of reading blocks |
+
+### archive_v1 and chainHead_v1
+
+Checked Nov 15, 2026 on the testnet node.
+
+- `archive_v1_finalizedHeight` answers, and `archive_v1_hashByHeight`, `archive_v1_header` and `archive_v1_call` answered at block 1. `archive_v1_storage` is a subscription: over WebSocket it returns an id, then `storage` and `storageDone` events.
+- `chainHead_v1_call` needs a follow opened with `[true]`; with `[false]` it answers ``{"code":-32802,"message":"The `chainHead_follow` subscription was started with `withRuntime` set to `false`"}``. `chainHead_v1_header` and `chainHead_v1_storage` work only for blocks the follow has pinned (recent ones); a block 3000 back answered `{"code":-32801,"message":"Invalid block hash"}`, so use `archive_v1_*` or `state_*` with a block hash for older blocks. At most 4 follows per connection (above).
+
+### Dry runs on the node
+
+- `system_dryRun` and `system_dryRunAt` answer on the public testnet node today (Checked Nov 15, 2026). Many public nodes do not serve these two methods, so do not depend on them: this node may stop serving them.
+- `system_dryRun` of signed bytes runs the whole transaction, the call included, and changes nothing (nonce and balance were the same afterwards). For a funded key it answered `0x0000` (Ok) for a remark, `0x00010700` for a transfer above the balance (`Token(FundsUnavailable)`), and `0x0001032701000000` for an `Assets.transfer` of an asset the account never held (`Assets.NoAccount`, module 39 error 1). A `utility.batch` with a failing call inside answered `0x0000`: an inner failure shows only in events, which a dry run does not return (Checked Nov 15, 2026, nothing sent).
+  - It checks the signature and the fee first: an empty account gets `0x010001` (`Invalid(Payment)`) and a broken signature `0x010004` (`Invalid(BadProof)`), so it helps only with a key you hold that can pay.
+  - Decode with the chain's own error types: @polkadot/api's built-in `ApplyExtrinsicResult` prints `0x00010700` with the old name `NoFunds`.
+- The runtime has no `DryRunApi`: `{"code":4003,"message":"Client error: Execution failed: Other: Exported method DryRunApi_dry_run_call is not found"}` (E51). For an account you cannot sign for, dry-run the call with `eth_estimateGas` from its `0x` form to the pallets address (E29).
+
+### Data stored with TransactionStorage
+
+Checked Nov 15, 2026 on the testnet node.
+
+- `bitswap_v1_get` with a CIDv1 returns the stored bytes as `0x` hex, over plain JSON-RPC. The CID is `b` + base32 (lower case, no padding) of `0x01 0x55 0xa0 0xe4 0x02 0x20` + the entry's `contentHash`; check that blake2-256 of the bytes equals `contentHash`. Passing the `contentHash` itself answers `{"code":-32602,"message":"Invalid CID: Failed to parse multihash","data":{"variant":"InvalidCid"}}`.
+- To find entries, read `TransactionStorage.Transactions(block)`, or call `TransactionStorageApi_indexed_transactions` through `state_call` with the block number as a little-endian u32. Big-endian bytes, which @polkadot/types `createType('u32', n).toHex()` gives, ask for another block and answer `0x00`.
+- `RetentionPeriod` is 100800 blocks, about 7 days; `renew` keeps an entry. Data stored at block 279419 and renewed since was still served about 198,500 blocks later. Whether data past its retention is served is not known, and the archive node keeps the block bodies that carry it: treat stored data as public and permanent.
+- Fees: `amounts-and-fees.md` (Native fees). A dry run of a valid `store` or `renew` answers `BadContext` (E53).
+
+### The 135 methods
+
+Testnet node, `rpc_methods`, Checked Nov 15, 2026 (block 477764).
+
+| Group | Methods |
+|---|---|
+| `chain_*` (19) | blocks, headers, hashes, the finalized head (both spellings, `Finalised` and `Finalized`), and subscriptions to new and finalized heads and to the runtime version |
+| `state_*` (25) | storage, keys, pairs, metadata, the runtime version, `state_call`, `state_getReadProof`, `state_getChildReadProof`, `state_queryStorage`, `state_traceBlock`, storage subscriptions |
+| `childstate_*` (7) | child-trie keys, values, hashes and sizes (contract storage) |
+| `system_*` (20) | chain name, properties, health, version, `system_accountNextIndex`, `system_dryRun`, `system_dryRunAt`, `system_peers`, and node administration |
+| `author_*` (10) | submit and watch transactions, `author_pendingExtrinsics`, session keys |
+| `archive_v1_*` (10), `chainHead_v1_*` (9), `chainSpec_v1_*` (3), `transaction_v1_*` (2), `transactionWatch_v1_*` (2) | the newer JSON-RPC interface |
+| `grandpa_*` (4), `beefy_*` (3), `mmr_*` (5), `babe_epochAuthorship` | finality and consensus |
+| `payment_queryInfo`, `payment_queryFeeDetails` | fees |
+| `bitswap_v1_get` | TransactionStorage data |
+| `statement_*` (3), `offchain_localStorage*` (3), `dev_getBlockStats`, `sync_state_genSyncSpec`, `account_nextIndex`, `subscribe_newHead`, `unsubscribe_newHead`, `rpc_methods` | others |
 
 ## Explorers and consoles
 
