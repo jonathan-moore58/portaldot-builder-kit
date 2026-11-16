@@ -162,7 +162,7 @@ The built server is one file with no dependencies to install. Node.js 24 runs th
 
 ## How it was checked
 
-Where the facts come from. On Nov 15, 2026 we sent 65 transactions of our own on the testnet, from fresh test accounts (the node took 50 and refused 15), and recorded 524 dry runs and reads in six groups: what Ethereum tools put into a transaction, a token's ERC-20 address, locked balances and address rules, calls between contracts, signing with other libraries, and the public endpoints. A sample of each group was then measured a second time, independently, and where the two differed the knowledge pack follows the second. Earlier measurements carry their own dates.
+Where the facts come from. On Nov 15, 2026 we sent 65 transactions on the testnet from our own test accounts (the node took 50 and refused 15), and recorded 524 dry runs and reads in six groups: what Ethereum tools put into a transaction, a token's ERC-20 address, locked balances and address rules, calls between contracts, signing with other libraries, and the public endpoints. Earlier measurements carry their own dates.
 
 How the kit itself is tested. Numbers from November 16, 2026, on Node.js 24 and Windows:
 

@@ -149,13 +149,13 @@ Testnet node, `rpc_methods`, Checked Nov 15, 2026 (block 477764).
 | `chain_*` (19) | blocks, headers, hashes, the finalized head (both spellings, `Finalised` and `Finalized`), and subscriptions to new and finalized heads and to the runtime version |
 | `state_*` (25) | storage, keys, pairs, metadata, the runtime version, `state_call`, `state_getReadProof`, `state_getChildReadProof`, `state_queryStorage`, `state_traceBlock`, storage subscriptions |
 | `childstate_*` (7) | child-trie keys, values, hashes and sizes (contract storage) |
-| `system_*` (20) | chain name, properties, health, version, `system_accountNextIndex`, `system_dryRun`, `system_dryRunAt`, `system_peers`, and node administration |
-| `author_*` (10) | submit and watch transactions, `author_pendingExtrinsics`, session keys |
+| `system_*` (20) | chain name, properties, health, version, `system_accountNextIndex`, `system_dryRun`, `system_dryRunAt`, and others |
+| `author_*` (10) | submit and watch transactions, `author_pendingExtrinsics`, and others |
 | `archive_v1_*` (10), `chainHead_v1_*` (9), `chainSpec_v1_*` (3), `transaction_v1_*` (2), `transactionWatch_v1_*` (2) | the newer JSON-RPC interface |
 | `grandpa_*` (4), `beefy_*` (3), `mmr_*` (5), `babe_epochAuthorship` | finality and consensus |
 | `payment_queryInfo`, `payment_queryFeeDetails` | fees |
 | `bitswap_v1_get` | TransactionStorage data |
-| `statement_*` (3), `offchain_localStorage*` (3), `dev_getBlockStats`, `sync_state_genSyncSpec`, `account_nextIndex`, `subscribe_newHead`, `unsubscribe_newHead`, `rpc_methods` | others |
+| `statement_*` (3), `sync_state_genSyncSpec`, `account_nextIndex`, `subscribe_newHead`, `unsubscribe_newHead`, `rpc_methods`, and four more | others |
 
 ## Explorers and consoles
 
