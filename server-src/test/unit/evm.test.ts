@@ -210,20 +210,50 @@ test('acceptanceOf: our real sends of Nov 15, 2026 come out as they did', () => 
   assert.equal(r5.maxValue, 214_314_446_760_000n);
   assert.equal(r5.shortToSucceed, 13_490_500_000_000_000n - 12_704_814_446_760_000n);
   assert.equal(r5.shortToTake, 0n);
-  // R2: more than gas limit x base fee + value, less than gas limit x max fee + value -> taken and succeeded
-  const r2 = acceptanceOf({ gasLimit: 825_000_000_000n, baseFee: 15140n, value: 10n ** 15n, balance: 13_490_500_000_000_001n });
-  assert.equal(r2.outcome, 'ok');
-  assert.equal(r2.spare, 1n);
-  // T4: gas limit x base fee 5 percent above the balance -> refused; T4b: 2 percent below -> taken
-  const balance = 5_700_000_000_000_000_000n;
-  const t4 = acceptanceOf({ gasLimit: (balance * 105n) / 100n / 15140n + 1n, baseFee: 15140n, value: 0n, balance });
+  assert.equal(r5.nearLine, false, 'R5, 1.7 percent below, was measured: not near');
+  // R1: the same sender and balance, gas limit x base fee 2.4 percent above the balance -> refused
+  const r1 = acceptanceOf({ gasLimit: 859_005_903_916n, baseFee: 15140n, value: 10n ** 15n, balance: 12_704_814_446_760_000n });
+  assert.equal(r1.outcome, 'refused');
+  assert.equal(r1.nearLine, false, 'R1, 2.4 percent above, was measured: not near');
+  // R2 (block 477914): more than gas limit x base fee + value, less than gas limit x max fee + value -> taken and succeeded
+  assert.equal(acceptanceOf({ gasLimit: 859_005_903_916n, baseFee: 15140n, value: 10n ** 15n, balance: 20_508_024_077_940_000n }).outcome, 'ok');
+  // D6 (block 477900): the whole balance as the value -> taken, failed
+  assert.equal(acceptanceOf({ gasLimit: 859_005_920_812n, baseFee: 15140n, value: 5_777_453_158_918_482_169n, balance: 5_777_453_158_918_482_169n }).outcome, 'fails');
+  // T4: gas limit x base fee 5 percent above the balance -> refused; T4b (block 478132): 2 percent below -> taken
+  const t4 = acceptanceOf({ gasLimit: 396_711_683_139_265n, baseFee: 15130n, value: 0n, balance: 5_716_426_443_711_507_559n });
   assert.equal(t4.outcome, 'refused');
   assert.equal(t4.maxValue, null);
-  const t4b = acceptanceOf({ gasLimit: (balance * 98n) / 100n / 15140n, baseFee: 15140n, value: 0n, balance });
+  assert.equal(t4.nearLine, false, '5 percent above was measured: not near');
+  const t4b = acceptanceOf({ gasLimit: 370_264_237_596_647n, baseFee: 15130n, value: 0n, balance: 5_716_426_443_711_507_559n });
   assert.equal(t4b.outcome, 'ok');
   assert.equal(t4b.nearLine, false, '2 percent below was measured: not near');
+  // one wei more than gas limit x base fee + value: taken, with 1 wei to spare
+  const edge = acceptanceOf({ gasLimit: 825_000_000_000n, baseFee: 15140n, value: 10n ** 15n, balance: 13_490_500_000_000_001n });
+  assert.equal(edge.outcome, 'ok');
+  assert.equal(edge.spare, 1n);
+  // nearer than the measured sends: close to the line
+  const balance = 5_700_000_000_000_000_000n;
   assert.equal(acceptanceOf({ gasLimit: (balance * 99n) / 100n / 15140n, baseFee: 15140n, value: 0n, balance }).nearLine, true, '1 percent below was not measured');
-  assert.equal(acceptanceOf({ gasLimit: (balance * 103n) / 100n / 15140n, baseFee: 15140n, value: 0n, balance }).nearLine, true, '3 percent above was not measured');
+  assert.equal(acceptanceOf({ gasLimit: (balance * 102n) / 100n / 15140n, baseFee: 15140n, value: 0n, balance }).nearLine, true, '2 percent above was not measured');
+});
+
+test('acceptanceOf: the band of "close to the line" lies between the nearest measured sends, 98.32 and 102.36 percent', () => {
+  const near = (gasLimit: bigint): boolean => acceptanceOf({ gasLimit, baseFee: 1n, value: 0n, balance: 10_000n }).nearLine;
+  assert.deepEqual([9831n, 9832n, 9833n, 10_000n, 10_235n, 10_236n, 10_237n].map(near), [false, false, true, true, true, false, false]);
+});
+
+test('acceptanceOf: with a max fee, the advice leaves room for the base fee to rise up to it', () => {
+  // gas limit 100, base fee 8, max fee 9 (one eighth more): taken at 800, 900 if the base fee rises to the max fee
+  const fails = acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 300n, balance: 1000n, maxFee: 9n });
+  assert.deepEqual([fails.outcome, fails.maxValue, fails.withRise, fails.safeValue, fails.safeFund], ['fails', 200n, 900n, 100n, 200n]);
+  const refused = acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 0n, balance: 700n, maxFee: 9n });
+  assert.deepEqual([refused.outcome, refused.safeValue, refused.safeFund], ['refused', null, 200n]);
+  // a max fee that is not above the base fee adds nothing: the advice is at this base fee
+  const flat = acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 300n, balance: 1000n, maxFee: 8n });
+  assert.deepEqual([flat.withRise, flat.safeValue, flat.safeFund], [800n, 200n, 100n]);
+  // the balance covers gas limit x base fee but not gas limit x max fee: no value fits with that room
+  const tight = acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 60n, balance: 850n, maxFee: 9n });
+  assert.deepEqual([tight.outcome, tight.safeValue, tight.safeFund], ['fails', 0n, 110n]);
 });
 
 test('acceptanceOf: the value never decides refused or taken, and the line itself is taken', () => {
@@ -253,6 +283,30 @@ test('verdictText: three outcomes, the numbers that decide, and what to change, 
   const empty = verdictText(acceptanceOf({ gasLimit: 100n, baseFee: 10n, value: 0n, balance: 0n }), net, fund);
   assert.match(empty, /The balance is 0: if the account holds less than the 0\.1 tPOT existential deposit \(or does not exist yet\), send that 0\.1 tPOT on top\./);
   const near = verdictText(acceptanceOf({ gasLimit: 99n, baseFee: 10n, value: 0n, balance: 1000n }), net, fund);
-  assert.match(near, /Close to the line: .* keep a margin\./);
-  for (const t of [ok, fails, refused, empty, near]) assert.match(t, /^[\x20-\x7e]*$/, 'ASCII only, one line');
+  assert.ok(
+    near.endsWith(' Close to the line: gas limit x base fee is within 1.7 percent below to 2.4 percent above the balance. Real sends of Nov 15, 2026 were taken at 1.7 percent below (testnet block 477940) and refused at 2.4 percent above, not nearer, so keep a margin.'),
+    near,
+  );
+  assert.doesNotMatch(ok, /Close to the line/, '50 percent of the balance is far from the line');
+  // with a max fee: the advice leaves room for the base fee to rise up to it
+  const failsRise = verdictText(acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 300n, balance: 1000n, maxFee: 9n }), net, fund);
+  assert.match(failsRise, /short by 0\.0000000000000001 tPOT \(100 wei\)\. /);
+  assert.match(failsRise, /Lower the value to at most 0\.0000000000000001 tPOT \(100 wei\), the balance less gas limit x max fee, so that it still fits if the base fee rises up to the max fee before the block; or send at least 0\.0000000000000002 tPOT more to 5FUND first\.$/);
+  const tight = verdictText(acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 60n, balance: 850n, maxFee: 9n }), net, fund);
+  assert.match(tight, /\. Send at least 0\.00000000000000011 tPOT more to 5FUND first \(that leaves room for the base fee to rise up to the max fee before the block\)\.$/);
+  // a value that fits only at this base fee: the verdict stays TAKEN, with the room a rise would need
+  // spare 70, room 100, so safe value 150 and 30 to add; a rise of 7 wei per gas still fits, 8 does not
+  const thin = verdictText(acceptanceOf({ gasLimit: 10n, baseFee: 80n, value: 180n, balance: 1050n, maxFee: 90n }), net, fund);
+  assert.match(thin, /with 0\.00000000000000007 tPOT to spare\. But a rise of the base fee up to the max fee would take more than that: if the base fee rises by more than 7 wei per gas before the block, the value no longer fits, and the transaction fails and costs the fee\. To keep that room, lower the value to at most 0\.00000000000000015 tPOT \(150 wei\), or send at least 0\.00000000000000003 tPOT more to 5FUND first\.$/);
+  assert.doesNotMatch(verdictText(acceptanceOf({ gasLimit: 10n, baseFee: 80n, value: 150n, balance: 1050n, maxFee: 90n }), net, fund), /But a rise/, 'a spare equal to the room');
+  assert.doesNotMatch(verdictText(acceptanceOf({ gasLimit: 10n, baseFee: 80n, value: 0n, balance: 850n, maxFee: 90n }), net, fund), /But a rise/, 'no value, so nothing that no longer fits');
+  // spare 150 over gas limit 20 is 7.5: a rise of 7 wei per gas fits (1740 + 100 = 1840), 8 does not (1860 > 1850); the room is 200
+  const odd = verdictText(acceptanceOf({ gasLimit: 20n, baseFee: 80n, value: 100n, balance: 1850n, maxFee: 90n }), net, fund);
+  assert.match(odd, /if the base fee rises by more than 7 wei per gas before the block/);
+  assert.doesNotMatch(tight, /Lower the value/, 'no value fits with room for the rise');
+  const refusedRise = verdictText(acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 7n, balance: 700n, maxFee: 9n }), net, fund);
+  assert.match(refusedRise, /short by 0\.0000000000000001 tPOT \(100 wei\)\. Nothing is charged and the nonce stays free\. Send at least 0\.000000000000000207 tPOT to 5FUND first \(that covers the value too, and a rise of the base fee up to the max fee before the block\)\./);
+  const refusedRiseNoValue = verdictText(acceptanceOf({ gasLimit: 100n, baseFee: 8n, value: 0n, balance: 700n, maxFee: 9n }), net, fund);
+  assert.match(refusedRiseNoValue, /Send at least 0\.0000000000000002 tPOT to 5FUND first \(that covers a rise of the base fee up to the max fee before the block\)\./);
+  for (const t of [ok, fails, refused, empty, near, failsRise, tight, refusedRise, refusedRiseNoValue]) assert.match(t, /^[\x20-\x7e]*$/, 'ASCII only, one line');
 });

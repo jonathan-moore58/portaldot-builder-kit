@@ -611,7 +611,7 @@ Tool: `convert_address` gives both forms, checks the link on the chain, and says
 
 ---
 
-## 7. An account's balance in both forms
+## 7. An account's balance in both forms, what it can send, and a vesting lock to release
 
 What it does: reads the native balance (14 decimals), what the Ethereum side shows (18 decimals) through the Ethereum RPC and through the node's runtime API (which works on the mainnet too), the dust, and checks the rule that links them. Then it prints what a native transfer can move, and any vesting schedule that has ended but still locks tPOT.
 
@@ -665,7 +665,7 @@ free 15486476300000575558, reserved 0, frozen 0 (base units), nonce 0
 reviveApi.balance 154864663000005755580000 wei, eth_getBalance 154864663000005755580000 wei, (free - max(frozen, 0.1 tPOT)) x 10000 + dust = 154864663000005755580000 wei
 ```
 
-- The Ethereum side shows (free - max(frozen, existential deposit)) x 10000 wei + the account's dust (Checked Nov 14, 2026 on 19 accounts of both networks). For an account with nothing frozen that is (free - 0.1 tPOT) x 10^4 + dust, so a wallet's "max" on the Ethereum side keeps the 0.1; a transaction must also leave gas limit x base fee (recipe 2c).
+- The Ethereum side shows (free - max(frozen, existential deposit)) x 10000 wei + the account's dust (Checked Nov 14, 2026 on 19 accounts of both networks). For an account with nothing frozen that is (free - 0.1 tPOT) x 10^4 + dust, so a wallet's "max" on the Ethereum side keeps the 0.1; a transaction must also leave gas limit x base fee, and recipe 2c leaves gas limit x max fee, for room.
 - For a MetaMask address with no tPOT yet, every figure is 0, and the fallback account does not exist until it is funded.
 - Use BigInt for every amount: 154864 tPOT is far above what a JS `Number` holds exactly (E3).
 - Reserved tPOT (held for staking, which is a hold here and not a lock, or as a deposit) does not lower what the Ethereum side shows; frozen tPOT (for example under a vesting lock) does. Dust is added even when nothing can be spent.
@@ -705,18 +705,19 @@ console.log(`queryCallInfo weight ${JSON.stringify(callInfo.weight)}, fee ${toke
 // 3. An Ethereum transaction: gas x gas price is the fee AND the storage deposit (18 decimals)
 const est = BigInt(await eth('eth_estimateGas', [{ from: senderH160, to: '0x6d6f646c70792f70616464720000000000000000', data: call.toHex() }]));
 const gasPrice = BigInt(await eth('eth_gasPrice'));
-const gasLimit = est + est / 10n; // the 10 percent is headroom: unused gas is not charged
+const gasLimit = est + est / 10n, maxFee = gasPrice + gasPrice / 8n; // the 10 percent is headroom: unused gas is not charged
 // The node takes the transaction when the sender can spend gas limit x base fee; the value must fit on top, or it fails in the block (E45).
-console.log(`eth_estimateGas ${est} x ${gasPrice} wei = ${tokens(est * gasPrice, 18)} tPOT; balance needed ${tokens(gasLimit * gasPrice, 18)} tPOT plus the value`);
+// The check below uses the max fee, which leaves room for the base fee to rise.
+console.log(`eth_estimateGas ${est} x ${gasPrice} wei = ${tokens(est * gasPrice, 18)} tPOT; balance needed ${tokens(gasLimit * maxFee, 18)} tPOT plus the value`);
 await api.disconnect();
 ```
 
-What you should see (Nov 14, 2026; the last figure is worked out from the same estimate and gas price, under the rule measured on Nov 15):
+What you should see (Nov 14, 2026; the last figure is worked out from the same estimate and gas price, with the balance line above):
 
 ```
 transferKeepAlive fee 0.01490314187428 tPOT, weight 656445000 / 15777
 queryCallInfo weight {"refTime":164051000,"proofSize":3593}, fee 0.00420159645697 tPOT
-eth_estimateGas 1068327538268 x 15690 wei = 0.016762059075424920 tPOT; balance needed 0.018438264982954860 tPOT plus the value
+eth_estimateGas 1068327538268 x 15690 wei = 0.016762059075424920 tPOT; balance needed 0.020742754315751194 tPOT plus the value
 ```
 
 Which estimate for which job:
@@ -726,7 +727,7 @@ Which estimate for which job:
 | A native extrinsic | `(await tx.paymentInfo(sender)).partialFee` | `transferKeepAlive` about 0.0149 tPOT (Checked Nov 14, 2026) |
 | A contract call or deployment on the native path | the dry run (`reviveApi.call`, `reviveApi.instantiate`) for the weight and the deposit, plus `paymentInfo` for the fee; total = value + deposit limit + fee + 0.1 tPOT | recipes 2e and 3 (`recipes-contracts.md`) |
 | `multisig.asMulti`'s `maxWeight` | `transactionPaymentCallApi.queryCallInfo(call, length)`, read with `.toJSON().weight` | Experience, Oct 2026 |
-| An Ethereum transaction | `eth_estimateGas x eth_gasPrice` = fee + deposit; the balance must cover value + gas limit x gas price (the base fee) | recipes 2c and 4 (`recipes-contracts.md`) |
+| An Ethereum transaction | `eth_estimateGas x eth_gasPrice` = fee + deposit; the balance must cover value + gas limit x max fee (the node itself needs gas limit x base fee) | recipes 2c and 4 (`recipes-contracts.md`) |
 
 - The Ethereum rule, by transactions we sent on Nov 15, 2026: the node takes a transaction when gas limit x base fee is at most what the sender can spend (`eth_getBalance`), and refuses it with a bare 1010 otherwise (taken at 2 percent below that line, refused at 5 percent above it; blocks 478128 to 478132). The max fee, a legacy gas price, the priority fee and the value are not counted. It then charges gasUsed x base fee, plus the value: a transfer's balance fell by exactly that (block 477814). The value is checked only in the block (E45).
 - Deposits are part of the cost: a new 32-byte contract storage slot holds 3.8415 tPOT; deploying new code of L bytes holds 0.078 x L + 13.11 tPOT before the constructor's storage (Checked Nov 14, 2026; `amounts-and-fees.md`).
@@ -820,7 +821,7 @@ The rules our tools follow (Experience, from every send since Oct 19, 2026, corr
 - Send only when nothing waits: `system_accountNextIndex` equals `System.Account.nonce` of the account that holds the funds. The native and the Ethereum side share one nonce per account (Checked Nov 14, 2026), so an Ethereum transaction and a native extrinsic from one account draw from the same sequence. Send one at a time.
 - Sign with the nonce from `system_accountNextIndex`, never from a counter of your own, and write the hash down before submitting: for a native extrinsic `signed.hash`; for an Ethereum transaction keccak-256 of the raw signed transaction (`cast keccak <raw>`). After a crash, the hash and the nonce let the next run settle the send instead of sending twice.
 - Treat a send as done only when its block is finalized. GRANDPA finalizes about 2 blocks (12 s) behind the best block, with 2 validators. On Nov 14, 2026 `eth_getBlockByNumber("finalized")` matched the node's finalized head (Checked).
-- If a send is not final after 10 minutes, treat it as pending, not failed: the chain may have stopped (E14). Then use step 3: if the nonce was used in a finalized block, look in that block for your hash (recipe 5b); if another extrinsic used the nonce, yours was dropped; if the nonce is still free, your transaction may still be in the pool (step 1b), or may have been dropped.
+- If a send is not final after 10 minutes, treat it as pending, not failed: the chain may have stopped (E14). Then use step 3: if the nonce was used in a finalized block, look in that block for your hash (recipe 5b); if another extrinsic used the nonce, yours can never be included, but a copy of your payment with a hash you did not write down (a wallet's speed-up: the same call, recipient and amount) counts as yours (E12); if the nonce is still free, your transaction may still be in the pool (step 1b), or may have been dropped.
 - Check the genesis hash and the chain id before every send (recipe 0).
 
 ### Replace or cancel a transaction that waits for its block

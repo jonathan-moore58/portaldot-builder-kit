@@ -172,6 +172,10 @@ test('a topic in every common form finds its section or file', () => {
     ['open question 4', 'open-questions/4'],
     ['rules', 'portaldot-v3/rules-prevent-costly-mistakes'],
     ['`errors/E1`', 'errors/E1'],
+    ['E12.', 'errors/E12'],
+    ['E12:', 'errors/E12'],
+    ['recipe 4,', 'recipes-contracts/4'],
+    ['errors.md#E12/', 'errors/E12'],
   ];
   for (const [topic, id] of sections) {
     const f = findTopic(GUIDE, topic);
@@ -183,6 +187,8 @@ test('a topic in every common form finds its section or file', () => {
     ['plugins/portaldot-dev/skills/portaldot-v3/references/networks.md', 'networks'],
     ['SKILL.md', 'portaldot-v3'],
     ['portaldot-v3/SKILL.md', 'portaldot-v3'],
+    ['errors/', 'errors'],
+    ['networks.md.', 'networks'],
   ];
   for (const [topic, id] of files) {
     const f = findTopic(GUIDE, topic);

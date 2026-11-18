@@ -2,7 +2,7 @@
 
 Recipes 2, 3 and 4 of the Portaldot V3 recipes. Recipes 0, 1 and 5 to 10 (connect, sign and send tPOT, read results and events, addresses, balances, fees, nonces, stored data) are in `recipes.md`, with the prerequisites, the safety rule and the basis words. Read this file when you build, deploy or call a Solidity contract, use an Assets token from the Ethereum side, or send a native call from an Ethereum key.
 
-By the Bridge Zero team, an independent project and not an official Portaldot one. The read-only parts below ran against the V3 testnet on Nov 14, 2026; the parts that sign and send ran up to the signing step and are labelled "Assembled" unless a recipe says "Proven". Each basis line says what ran.
+By the Bridge Zero team, an independent project and not an official Portaldot one. Most read-only parts below ran against the V3 testnet on Nov 14, 2026. Each basis line says what ran and how far: the parts that sign and send are labelled "Assembled" unless a recipe says "Proven", and some of them passed only `node --check` or `bash -n`.
 
 You need: Node 20 or newer with @polkadot/api 17 (`recipes.md`), recipes 0, 6 and 9 saved as `v3.mjs`, `addresses.mjs` and `nonce-check.mjs`, and Foundry for the shell parts (they ran with Foundry 1.8.5 in Git Bash on Windows; any bash works). Error numbers (E1, E2 and so on) refer to `errors.md`.
 
@@ -13,7 +13,7 @@ You need: Node 20 or newer with @polkadot/api 17 (`recipes.md`), recipes 0, 6 an
 Two things to know first:
 
 - Gas on the Ethereum side includes the storage deposit, so estimates of 10^12 to 10^16 gas are normal. A new 32-byte storage slot holds 3.8415 tPOT; deploying new code whose runtime part is L bytes holds 0.078 x L + 13.11 tPOT before the constructor's storage (Checked Nov 14, 2026; `amounts-and-fees.md`).
-- The gas rule for every Ethereum transaction: gas limit = `eth_estimateGas` + 10 percent; max fee = `eth_gasPrice` + one eighth; priority fee 0. The node takes the transaction only when the sender can spend gas limit x base fee (`eth_gasPrice`), and refuses it with error 1010 otherwise (E1). It charges gasUsed x base fee: unused gas, the room up to the max fee and the priority fee are not charged. The value is not checked before the block: a value that does not fit beside gas limit x base fee is mined as failed, and the fee is paid (E45). So check balance >= value + gas limit x gas price before signing. Checked on Nov 15, 2026 by transactions we sent (blocks 477814 to 478132); the limits themselves are Experience, proven by six contract calls sent as Ethereum transactions between Oct 19 and Nov 1, 2026, and by the two transactions of recipe 4.
+- The gas rule for every Ethereum transaction: gas limit = `eth_estimateGas` + 10 percent; max fee = `eth_gasPrice` + one eighth; priority fee 0. The node takes the transaction only when the sender can spend gas limit x base fee (`eth_gasPrice`), and refuses it with error 1010 otherwise (E1). It charges gasUsed x base fee: unused gas, the room up to the max fee and the priority fee are not charged. The value is not checked before the block: a value that does not fit beside gas limit x base fee is mined as failed, and the fee is paid (E45). So check balance >= value + gas limit x max fee before signing: the node itself needs gas limit x base fee, and the max fee leaves room for the base fee to rise. Checked on Nov 15, 2026 by transactions we sent (blocks 477814 to 478132); the limits themselves are Experience, proven by six contract calls sent as Ethereum transactions between Oct 19 and Nov 1, 2026, and by the two transactions of recipe 4.
 
 ---
 
@@ -71,7 +71,7 @@ Basis: **Proven**: every command ran on Nov 14, 2026 against the testnet. Tool: 
 
 ### 2c. Call a contract with an Ethereum transaction
 
-What it does: checks on the node that no transaction of the account waits, estimates, applies the gas rule, refuses when the balance cannot cover value + gas limit x gas price, signs with a Foundry keystore, prints the hash, publishes, and waits for the receipt. Recipe 4 uses the same script.
+What it does: checks on the node that no transaction of the account waits, estimates, applies the gas rule, refuses when the balance cannot cover value + gas limit x max fee, signs with a Foundry keystore, prints the hash, publishes, and waits for the receipt. Recipe 4 uses the same script.
 
 You need: a Foundry keystore with a TEST key that holds tPOT. `cast wallet import v3test --interactive` asks for the key and a password and stores the key encrypted; never paste a key into a chat or a file. Fund its address from a native wallet by sending tPOT to its fallback `5...` form (recipe 6 in `recipes.md`). Recipe 9's `nonce-check.mjs` in the same folder.
 
@@ -93,10 +93,10 @@ NONCE=$(cast nonce "$FROM" --rpc-url "$RPC")
 EST=$(cast estimate --from "$FROM" "$TO" "$DATA" --value "$VALUE" --rpc-url "$RPC")   # includes the storage deposit
 GP=$(cast gas-price --rpc-url "$RPC")   # the base fee
 # BigInt arithmetic: these products overflow the shell's 64-bit integers
-read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, ${VALUE}n+gas*g].join(' ')")"
+read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, ${VALUE}n+gas*fee].join(' ')")"
 BAL=$(cast balance "$FROM" --rpc-url "$RPC")
 echo "estimate $EST gas, gas price $GP wei; gas limit $GAS, max fee $MAXFEE; need $NEED wei, have $BAL wei"
-node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance too low: refused with 1010, or mined as failed if only the value does not fit"; exit 1; }
+node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance below value + gas limit x max fee: it may be refused with 1010, or mined as failed if the value does not fit"; exit 1; }
 
 cd "$(mktemp -d)"                   # Foundry reads the .env of the folder it runs in: sign in an empty one
 RAW=$(cast mktx "$TO" "$DATA" --rpc-url "$RPC" --chain 420420777 --account "$ACCOUNT" \
@@ -113,17 +113,17 @@ Use it for a contract call:
 TO=$CONTRACT DATA=$(cast calldata "approve(address,uint256)" $SPENDER 1000000000000000000) bash send-eth.sh
 ```
 
-What you should see before signing (Nov 14, 2026, an ERC-20 `approve` that writes one new slot; the `need` figure is worked out from the same numbers under the rule measured on Nov 15):
+What you should see before signing (Nov 14, 2026, an ERC-20 `approve` that writes one new slot; the `need` figure is worked out from the same numbers with the balance check above):
 
 ```
-estimate 249985957328367 gas, gas price 15685 wei; gas limit 274984553061203, max fee 17645; need 4313132714764969055 wei, have ... wei
+estimate 249985957328367 gas, gas price 15685 wei; gas limit 274984553061203, max fee 17645; need 4852102438764926935 wei, have ... wei
 ```
 
-That is about 3.92 tPOT of cost (3.8415 of deposit and the fee), and the balance check asks for about 4.31 tPOT. From an address with no tPOT the script stops at the balance check. After publishing, the receipt shows `status 1 (success)`; `gasUsed x effectiveGasPrice` is the fee plus the deposit.
+That is about 3.92 tPOT of cost (3.8415 of deposit and the fee), and the balance check asks for about 4.85 tPOT. From an address with no tPOT the script stops at the balance check. After publishing, the receipt shows `status 1 (success)`; `gasUsed x effectiveGasPrice` is the fee plus the deposit.
 
 - `--gas-price` of `cast mktx` is the max fee of an EIP-1559 (type 2) transaction; `--priority-gas-price 0` is accepted (`eth_maxPriorityFeePerGas` returns 0). Without the two flags, cast 1.8.5 signs a max fee of 2 x base fee + 1 wei and a priority fee of 1 wei (Checked Nov 15, 2026, on bytes it signed and we did not send). Either way the receipt's `effectiveGasPrice` is the base fee: the priority fee is not charged, for a legacy transaction neither (blocks 477889 and 477898).
 - The estimate is enough on its own: for a transfer, `eth_estimateGas` was 4.8 percent above the gas it used, and a limit 0.5 percent above that use was mined (blocks 477814 and 477899). The 10 percent only raises what the sender must hold; unused gas is not charged.
-- To send a whole balance: VALUE = `cast balance` - GAS x GP. A transfer whose value was the whole balance was taken, mined as failed and charged its fee (block 477900; E45). The 0.1 tPOT existential deposit stays anyway: `eth_getBalance` leaves it out. A value exactly at that line was not sent; if the gas price may rise before the block, subtract GAS x MAXFEE instead.
+- To send a whole balance: VALUE = `cast balance` - GAS x MAXFEE. A transfer whose value was the whole balance was taken, mined as failed and charged its fee (block 477900; E45). The node charges only gas used x base fee, so a little stays. The 0.1 tPOT existential deposit stays anyway: `eth_getBalance` leaves it out. A value exactly at that line was not sent.
 - For unattended use, `--password-file <file>` after `--account` gives the keystore password; keep that file outside the project.
 - A `value` of 0.001 tPOT + 1 wei was mined and the sender paid the exact wei; the receiver got 0.001 tPOT natively, and the 1 wei stays as dust that only the Ethereum side shows (block 477828; E3).
 - Windows: run the script in Git Bash or WSL. A command line longer than about 30000 characters is refused (E22).
@@ -155,11 +155,11 @@ node nonce-check.mjs "$FROM" > /dev/null || { echo "a transaction of this accoun
 NONCE=$(cast nonce "$FROM" --rpc-url "$RPC")
 EST=$(cast estimate --from "$FROM" --rpc-url "$RPC" --create "$INITCODE")   # includes the code deposit
 GP=$(cast gas-price --rpc-url "$RPC")
-read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, gas*g].join(' ')")"
+read -r GAS MAXFEE NEED <<< "$(node -p "const e=${EST}n, g=${GP}n, gas=e+e/10n, fee=g+g/8n; [gas, fee, gas*fee].join(' ')")"
 BAL=$(cast balance "$FROM" --rpc-url "$RPC")
 echo "init code $(( (${#INITCODE} - 2) / 2 )) bytes; estimate $EST gas at $GP wei; need $NEED wei, have $BAL wei"
 echo "expected address $(cast compute-address "$FROM" --nonce "$NONCE")"
-node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance too low: the node would refuse it with error 1010"; exit 1; }
+node -e "process.exit(${BAL}n >= ${NEED}n ? 0 : 1)" || { echo "balance below gas limit x max fee: the node may refuse it with error 1010"; exit 1; }
 
 cd "$(mktemp -d)"                   # an empty folder: no .env
 # the options come before --create, which is a subcommand
@@ -177,7 +177,7 @@ The deposit, worked out:
 - Example: an ERC-20 of 1863 bytes on the testnet. Its records hold a code deposit of 115.98 tPOT ((1863 + 70) x 0.06) and a contract deposit of 42.444 tPOT (30 percent of 115.98, plus 7.65): 158.424 tPOT = 0.078 x 1863 + 13.11. Its 6 storage slots hold 23.049 tPOT more (6 x 3.8415). Checked Nov 14, 2026 from `revive.codeInfoOf` and `revive.accountInfoOf`.
 - Seen on the chain: the creation transaction in testnet block 354887 (legacy, nonce 0, 6336 bytes of runtime code) held 384.36 tPOT of code deposit ((6336 + 70) x 0.06) on `modlpy/reviv` and 126.7995 tPOT for the contract (30 percent of 384.36, plus 7.65, plus one slot), and paid a fee of 0.6466 tPOT. Its receipt's `gasUsed x effectiveGasPrice` was 511.806 tPOT, the sum of the three, and the contract is at the CREATE address of its sender and nonce. Block 346634 (nonce 3, 6376 bytes) matched the same way (Checked Nov 14, 2026 from the receipts and the node's events).
 - In gas: the deposit divided by the gas price. At 15695 wei per gas, 158.424 tPOT alone is about 1.01 x 10^16 gas.
-- The balance check asks for 1.1 times the estimated cost (the 10 percent of headroom): about 174 tPOT for that ERC-20 before its storage. For init code that returns 1000 bytes of runtime code, the estimate on Nov 14, 2026 was 5900202211390958 gas at 15685 wei, about 92.5 tPOT (91.11 of it deposit), and the check asks for 101.80 tPOT.
+- The balance check asks for about 1.1 x 1.125 = 1.2375 times the estimated cost (the 10 percent of gas headroom, and the max fee one eighth above the gas price): about 196 tPOT for that ERC-20 before its storage. For init code that returns 1000 bytes of runtime code, the estimate on Nov 14, 2026 was 5900202211390958 gas at 15685 wei, about 92.5 tPOT (91.11 of it deposit), and the check asks for 114.52 tPOT.
 - Do not deploy with `forge script`: it takes its gas limits from its own simulation (329147 for that 1000-byte deployment), and the node refuses such limits (E39).
 - When the exact same runtime code is already stored on the chain, its code part, (L + 70) x 0.06, is not charged again; the lockup and the record are (Checked Nov 14, 2026: one byte of code that is already stored cost 8.928 tPOT instead of 13.188).
 
@@ -447,7 +447,7 @@ What you should see before signing (Nov 14, 2026, the Treasury as `from`, an ERC
 - Dry-run again right before sending: limits read earlier can change with the contract's state.
 - Code that pays addresses that do not exist yet adds 0.1 tPOT of deposit for each new account. We measured it in dry runs of deployments (E54), not of `revive.call`; expect the same here, and dry-run with the real payees.
 
-What can go wrong: a module error such as `Revive.StorageDepositLimitExhausted`, `Revive.OutOfGas` or `Revive.TransferFailed` (a value larger than the balance) (E7, E10); `Balances.InsufficientBalance`; a revert (decode the data, E26); `1010: Invalid Transaction: Inability to pay some fees` at submission (E1).
+What can go wrong: a module error such as `Revive.StorageDepositLimitExhausted`, `Revive.OutOfGas` or `Revive.TransferFailed` (a value larger than what the account can spend) (E7, E10, E47); `Balances.InsufficientBalance`; a revert (decode the data, E26); `1010: Invalid Transaction: Inability to pay some fees` at submission (E1).
 
 Basis: **Proven**: a contract call was sent this way from a native account on Oct 27, 2026 (weight 556697281 ref time and 32118 proof size, deposit 3.8415 tPOT, fee 0.0253 tPOT), and the same call has run inside `multisig.asMulti` (Oct 2026). This exact script is **Assembled**: on Nov 14, 2026 it ran up to the signing step for the three calls above, and `simulate_contract_call` gave the same limits and fee for `approve`. Not proven: a `result.err` that is not a module error.
 
@@ -496,7 +496,7 @@ DATA=0x0007946e61746976652063616c6c2066726f6d2061203078206163636f756e742c2074657
 bash send-eth.sh
 ```
 
-What you should see before signing (Nov 14, 2026; `need` worked out under the rule of Nov 15): `estimate 1055685474923 gas, gas price 15685 wei; gas limit 1161254022415, max fee 17645; need 18214269341579275 wei, ...`: a cost of about 0.0166 tPOT, and the check asks for about 0.0182 tPOT.
+What you should see before signing (Nov 14, 2026; `need` worked out from the same numbers with the balance check of 2c): `estimate 1055685474923 gas, gas price 15685 wei; gas limit 1161254022415, max fee 17645; need 20490327225512675 wei, ...`: a cost of about 0.0166 tPOT, and the check asks for about 0.0205 tPOT.
 
 Step 3, check both sides with recipe 5a (`eth-tx-both-sides.mjs` in `recipes.md`):
 

@@ -8,7 +8,7 @@ import { Metadata, TypeRegistry } from '@polkadot/types';
 import { blake2AsHex, keccakAsHex } from '@polkadot/util-crypto';
 import { SAVED_METADATA } from '../../src/generated/metadata.ts';
 import { NETWORKS } from '../../src/lib/networks.ts';
-import { findInPool, MAX_POOL, notFoundLines, renderPool } from '../../src/tools/get_transaction.ts';
+import { findInPool, MAX_POOL, MAX_POOL_HEX, notFoundLines, renderPool } from '../../src/tools/get_transaction.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Loose = any;
@@ -63,6 +63,32 @@ test('entries the runtime cannot decode are skipped, not thrown', () => {
   assert.equal(own?.x, null, 'found by its hash, though it cannot be decoded');
 });
 
+test('the pool is searched within a budget of hex characters: a long entry past it is passed over and counted', () => {
+  const big = `0x${'ff'.repeat(5_000)}`;
+  // a budget that holds ETH_X but not the long entry before it: the long one is passed over, ETH_X is still found
+  const stats = { skipped: 0 };
+  assert.equal(findInPool(registry, [big, ETH_X], keccakAsHex(RAW, 256), stats, ETH_X.length)?.position, 1);
+  assert.equal(stats.skipped, 1);
+  // a budget too small for ETH_X: neither of its hashes is matched
+  const none = { skipped: 0 };
+  assert.equal(findInPool(registry, [ETH_X], keccakAsHex(RAW, 256), none, ETH_X.length - 1), null);
+  assert.equal(findInPool(registry, [ETH_X], blake2AsHex(ETH_X, 256), none, ETH_X.length - 1), null);
+  assert.equal(none.skipped, 2);
+  // the default budget searches both
+  const all = { skipped: 0 };
+  assert.equal(findInPool(registry, [big, ETH_X], keccakAsHex(RAW, 256), all)?.position, 1);
+  assert.equal(all.skipped, 0);
+  // the budget is for all entries together: the long entry is searched, and what is left no longer holds ETH_X
+  const total = { skipped: 0 };
+  assert.equal(findInPool(registry, [big, ETH_X], keccakAsHex(RAW, 256), total, big.length + ETH_X.length - 1), null);
+  assert.equal(total.skipped, 1);
+  assert.equal(MAX_POOL_HEX, 8_000_000);
+  const t = notFoundLines(NETWORKS.testnet, { size: 2, why: null, skipped: 1 }).join('\n');
+  assert.match(t, /held 2; 1 long entry was passed over, to keep the lookup within about 4 MB, so a transaction among them would not be found here\)\./);
+  assert.match(notFoundLines(NETWORKS.testnet, { size: 9, why: null, skipped: 3 }).join('\n'), /; 3 long entries were passed over, /);
+  assert.doesNotMatch(notFoundLines(NETWORKS.testnet, { size: 2, why: null, skipped: 0 }).join('\n'), /passed over/);
+});
+
 test('renderPool: an Ethereum transaction that waits shows the fields of its signed bytes and what waiting means', () => {
   const m = findInPool(registry, POOL, keccakAsHex(RAW, 256));
   assert.ok(m);
@@ -95,8 +121,9 @@ test('renderPool: a native extrinsic that waits shows its call and arguments', (
 test('notFoundLines: what "in no block and not waiting" can mean, without guessing which', () => {
   const t = notFoundLines(NETWORKS.testnet, { size: 3, why: null }).join('\n');
   assert.match(t, /not in the node's pool of transactions waiting for a block \(author_pendingExtrinsics, read just now, held 3\)/);
-  for (const re of [/never sent to this node/, /refused when it was sent.*1010, 1012, 1013 or 1014/, /replaced by another transaction with the same nonce/, /waits behind a nonce gap.*does not list it until the missing nonce is sent \(measured on Nov 15, 2026\)/, /raise search_blocks/]) assert.match(t, re);
+  for (const re of [/never sent to this node/, /refused when it was sent: the sender got an error back, such as 1002, 1010, 1011 or 1014, or -32000 "Invalid transaction" from the Ethereum RPC/, /1012 \(temporarily banned\) or 1013 \(already imported\) does not show that it was refused/, /testnet block 477849\), and both also for refused bytes sent again/, /this transaction or another with that nonce is in a block, so do not send the payment again before you have found which one;/, /replaced by another transaction with the same nonce/, /waits behind a nonce gap.*does not list it until the missing nonce is sent \(measured on Nov 15, 2026\)/, /raise search_blocks/]) assert.match(t, re);
   assert.match(t, /If it was sent to the mainnet, add "network": "mainnet"\./);
+  assert.doesNotMatch(t, /1010, 1012, 1013 or 1014/, '1012 and 1013 are not refusals that leave no trace');
   assert.match(notFoundLines(NETWORKS.mainnet, { size: null, why: 'no answer' }).join('\n'), /the node's pool could not be read \(no answer\), so whether the transaction waits there is not known/);
   assert.match(notFoundLines(NETWORKS.testnet, { size: MAX_POOL + 1, why: null }).join('\n'), new RegExp(`the first ${MAX_POOL} were searched`));
 });

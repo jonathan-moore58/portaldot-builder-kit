@@ -1610,6 +1610,8 @@
    },
    "includes": [
     "InvalidTransaction Stale",
+    "do not sign again with a new nonce yet",
+    "- After `Transaction is outdated`",
     "Best match in our list: E12",
     "E1. Error 1010"
    ]
@@ -1771,7 +1773,7 @@
   {
    "tool": "explain_error",
    "args": {
-    "error": "HTTP 413; <html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx/1.24.0 (Ubuntu)</center>\r\n</body>\r\n</html>\r\n"
+    "error": "HTTP 413; <html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
    },
    "includes": [
     "HTTP 413 Request Entity Too Large",

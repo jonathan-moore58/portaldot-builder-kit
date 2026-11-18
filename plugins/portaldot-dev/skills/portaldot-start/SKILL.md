@@ -6,17 +6,17 @@ mcp-prompt: start_project
 
 # Start a Portaldot V3 project
 
-Your job: take the developer from an idea to a first working result on the V3 testnet (a transaction of theirs in a finalized block), then to the project's first real result, without the mistakes that cost tokens or days here. Three gates hold throughout: no code before the money check, no send before its dry run passes, no next step before the check after it passes. Take facts from the tools and the knowledge pack, never from memory or Ethereum habits. The 16 tools only read and dry-run; the developer, or a script of theirs that reads its key from its own environment, signs and sends. An id in brackets, such as [errors/E12] or [recipes/1], is a read_guide topic: `read_guide {"topic": "errors/E12"}`.
+Your job: take the developer from an idea to a first working result on the V3 testnet (a transaction of theirs in a finalized block), then to the project's first real result, without the mistakes that cost tokens or days here. Three gates hold throughout: no code before the money check (a read-only script that signs nothing, such as one that derives a multisig account, may run before it), no send before its dry run passes, no next step before the check after it passes. Take facts from the tools and the knowledge pack, never from memory or Ethereum habits. The 16 tools only read and dry-run; the developer, or a script of theirs that reads its key from its own environment, signs and sends. An id in brackets, such as [errors/E12] or [recipes/1], is a read_guide topic: `read_guide {"topic": "errors/E12"}`.
 
 The idea is in the developer's words, or after "What I want to build:" at the end of this text. With none, ask for it in one sentence and run the chain check of step 1 meanwhile.
 
 ## 1. At once, before any question
 
-Run these together, and report what they found in your first message:
+Run the first three together, then the reads the blueprint's plan starts with, and report what they found in your first message:
 
 - `get_chain_facts`: blocks are coming, safe mode is off, no call is paused, the gas price now. If blocks have stopped, do only what sends nothing [networks/testnet-halts].
 - The rules: `read_guide {"topic": "portaldot-v3/rules-prevent-costly-mistakes"}`, unless the portaldot-v3 skill is loaded. They hold for every step below.
-- The blueprint that fits, from the table: `read_guide {"topic": "blueprints/<id>"}`. Two fit (a mint page is NFTs and a page): read both, and plan from the one that holds the money. None fits: `read_guide {"query": "<their words>"}` and `search_chain {"query": "<the job>"}`, take the closest blueprint, and say which parts do not fit.
+- The blueprint that fits, from the table: `read_guide {"topic": "blueprints/<id>"}`. Two or more fit (a mint page is NFTs, a page and a payment): read each, plan from the one whose plan holds the money (for a mint page, nft-collection), and take the others' traps. None fits: `read_guide {"query": "<their words>"}` and `search_chain {"query": "<the job>"}`, take the closest blueprint, and say which parts do not fit.
 - The reads that the blueprint's plan starts with: the token, pool, collection or module the idea names (`read_storage`, `search_chain`).
 
 | The idea mentions | Blueprint id |
@@ -58,17 +58,17 @@ Choose the rest and say so: Node 20 or newer with @polkadot/api 17, Foundry for 
 | each approval or permit of an asset | 0.1, from the owner | on `approve(spender, 0)` | [amounts-and-fees/token-approval-deposits] |
 | an NFT collection; each item | 1; 0.1 | not in these notes | [native-modules/everyday-jobs-calls] |
 | an open multisig operation | 5.43 + 1.92 x threshold, from the opener | when it runs or is cancelled | [native-modules/multisig-rules] |
-| each proxy | 2.61 | on `Proxy.removeProxy` | [native-modules/proxy-rules] |
+| proxies of one account | 0.63, plus 1.98 per proxy (2.61 for one) | on `Proxy.removeProxy` | [native-modules/proxy-rules] |
 | a staking bond | the bond | about 168 days after unbonding | [native-modules/staking-numbers] |
 
-4. Say it in one line, each number marked as read live (which tool) or from the notes (which topic): "You hold A tPOT; the first result needs B; the whole plan about C." Then the verdict: GO; GO by a cheaper route (the blueprint's native route, or smaller code [contracts/build-settings]); or SHORT: do now everything before the expensive step (code, dry runs, cheap sends), and say how much to ask for (C less A, from the dry runs). There is no self-serve faucet; builders report getting tPOT by a ticket on the chain team's Discord, to a 5... address, for MetaMask its fallback form [networks/test-tokens].
+4. Say it in one line, each number marked as read live (which tool) or from the notes (which topic): "You hold A tPOT; the first result needs B; the whole plan about C." Then the verdict: GO; GO by a cheaper route (the blueprint's native route, or smaller code [contracts/build-settings]); or SHORT: do now everything before the expensive step (code, dry runs, cheap sends), and say how much to ask for (C less A, from the dry runs). While the Treasury stands in for a sender the developer has not named, A is not known: say so, give B and C from the dry runs and the table, and give the verdict once `get_account` of the real sender is read. There is no self-serve faucet; builders report getting tPOT by a ticket on the chain team's Discord (Reported); where only 5... addresses are taken, give a MetaMask address's fallback 5... form [networks/test-tokens].
 
 ## 4. Choose the approach: what the chain already has comes first
 
 For each piece of the idea (the money, who holds it, the rules, the payouts, the record, the screens), take the first line that fits:
 
 1. A native module does the job: use it. Assets tokens (each with an ERC-20 address), the AssetConversion pools, Nfts, Multisig, Proxy, `Utility.batchAll`, TransactionStorage: a fee and a small deposit, and no code to deploy [native-modules/everyday-jobs-calls].
-2. A rule must run as code that nobody can skip (a deadline, a cap, a formula, logic inside a transfer), or MetaMask users or contracts must hold NFTs (no ERC-721 address is known for Nfts [contracts/separate-token-worlds]): a contract. Say why in one sentence, and what it will hold.
+2. A rule must run as code that nobody can skip (a deadline, a cap, a formula, logic inside a transfer), or MetaMask must show the NFTs, or a contract own or check them (no ERC-721 address is known for Nfts [contracts/separate-token-worlds]; a MetaMask user can still own Nfts items, at its fallback 5... form [blueprints/nft-collection]): a contract. Say why in one sentence, and what it will hold.
 3. Both: the contract keeps the rules, and Assets tokens reach it at their ERC-20 addresses [contracts/tokens-assets-module-seen].
 
 Never plan on what this chain lacks: Multicall3, the CREATE2 deployer, Safe, Permit2, EntryPoint [errors/E19]; a timer started by an account, since the Scheduler refuses a signed origin [native-call-errors/scheduler]; an EVM explorer or source verification [errors/E20]; an Ethereum RPC on the mainnet [networks/mainnet].
@@ -112,4 +112,4 @@ The record: one file in the project, such as `portaldot-record.md`, never with a
 
 ## The blueprints
 
-- `references/blueprints.md`: one plan per kind of project, read as `blueprints/<id>`: token, NFT collection, swap or DEX, payments and payouts, escrow and conditional payments, multisig or treasury, staking, dApp front end, bot, indexer or keeper, data storage and records, bridge, oracle or proofs.
+One plan per kind of project: `read_guide {"topic": "blueprints/<id>"}`, with the ids of the table in step 1.

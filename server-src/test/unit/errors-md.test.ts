@@ -182,7 +182,7 @@ test('texts recorded on Nov 15, 2026 by sent transactions and dry runs find the 
     ['validateTransaction threw: 4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed\nWASM backtrace:\nerror while executing at wasm backtrace:\n    0: 0xb05592 - portaldot_v3_runtime.wasm!__rustc[4b1ee1ef74718a7b]::rust_begin_unwind\n    1:  0x1f5f9 - portaldot_v3_runtime.wasm!core[973facb28fb2967]::panicking::panic_fmt\n    2: 0x9465bd - portaldot_v3_runtime.wasm!TaggedTransactionQueue_validate_transaction', 'E55'],
     ['validate_transaction threw: Incompatible runtime entry RuntimeCall(TaggedTransactionQueue_validate_transaction)', 'E55'],
     // the public endpoints (E52)
-    ['HTTP 413; <html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx/1.24.0 (Ubuntu)</center>\r\n</body>\r\n</html>\r\n', 'E52'],
+    ['HTTP 413; <html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n', 'E52'],
     ['{"code":-32800,"message":"Maximum number of chainHead_follow has been reached"}', 'E52'],
     ['{"code":-32802,"message":"The `chainHead_follow` subscription was started with `withRuntime` set to `false`"}', 'E52'],
     ['{"code":-32801,"message":"Invalid block hash"}', 'E52'],
@@ -222,7 +222,7 @@ test('the new patterns leave ordinary texts and other entries\' texts alone', ()
     ['{"code":3,"message":"execution reverted: revert: ERC20: transfer amount exceeds balance","data":"0x08c379a0"}', 'E26'],
     ['4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed', 'E34'],
     ['1002: Verification Error: Runtime error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed\nWASM backtrace:\n    2: 0x9465bd - portaldot_v3_runtime.wasm!TaggedTransactionQueue_validate_transaction', 'E34'],
-    ['Error: HTTP 502 Bad Gateway <center>nginx/1.24.0 (Ubuntu)</center>', 'E14'],
+    ['Error: HTTP 502 Bad Gateway <center>nginx</center>', 'E14'],
     ['{"code":1010,"message":"Invalid Transaction"}', 'E1'],
     ['Permit2 is not deployed on this chain', 'E19'],
     ['approveAsMulti stored only the call hash', 'E16'],
@@ -288,6 +288,64 @@ test('standard codes give the texts measured on Nov 15, 2026', () => {
   assert.ok(!labels('{"code":-32000,"message":"failed to run contract: Module(ModuleError { index: 80, error: [31, 0, 0, 0], message: Some(\\"InvalidInstruction\\") })"}').some((l) => l.includes('ERC-20')));
   // only the leads are shown before the named module errors
   assert.deepEqual(STANDARD.filter((s) => s.lead).map((s) => s.label).sort(), ['-32000 Not enough gas supplied', '-32000 failed to run contract, at the ERC-20 address of an Assets token']);
+});
+
+test('after a used nonce, the advice is to look up the earlier send, never to sign at once with the next nonce', () => {
+  // a retry of a send that went through gets "Transaction is outdated": signing with the next nonce would pay twice
+  const stale = STANDARD.find((s) => s.label === 'InvalidTransaction Stale')?.meaning ?? '';
+  assert.doesNotMatch(stale, /sign with the next one/);
+  assert.match(stale, /It may be your own earlier send, and this a retry of it, so do not sign again with a new nonce yet/);
+  assert.match(stale, /Settle every earlier send of this payment by the nonce it was signed with \(and by the hash you wrote down before sending it, not by the hash of this refused one\)/);
+  assert.match(stale, /While the account is not past that nonce \(get_account shows its nonce\), the send can still be included/);
+  assert.match(stale, /find the block where that nonce was used \(recipe 9 step 3\): the transaction with that nonce there is either this payment \(read its result, and the result of a call inside it\) or another transaction/);
+  assert.match(stale, /Sign again only what is settled as not done: a send that failed or whose call inside failed, after fixing the cause \(of a batch that stopped part way, only the calls that did not run\), or one that lost its nonce to another transaction, with the nonce from system_accountNextIndex/);
+  assert.match(stale, /Keep at most one send of the payment able to run: if another one succeeded, also with a call inside it that failed, replace this one with a harmless transaction of its nonce and a higher tip or fees; if several still wait, keep the one with the lowest nonce and replace the others at once \(recipe 9\)/);
+  assert.match(stale, /Behind a nonce gap it runs only once the missing nonces are used: after replacing any other send, send a harmless transaction with each missing nonce, not the payment \(recipe 9, A nonce gap\)/);
+  assert.match(stale, /It is this payment when its hash is one you wrote down for it, and the other payment when you wrote its hash down for that one; with a hash you never wrote down \(a wallet speed-up has another hash\), it is this payment when its call, recipient and amount are the same/);
+  assert.match(stale, /At the account's next nonce while get_account shows that nothing waits, it was refused or dropped: if no other send of this payment succeeded or still waits, sign it again with that same nonce/);
+  assert.match(stale, /Otherwise wait for it or replace it with the same nonce \(recipe 9\); do not sign the payment with another nonce/);
+  assert.doesNotMatch(stale, /in neither place/, 'a failed earlier send is in a block and must be sent again once fixed');
+  const e12 = ERROR_ENTRIES.find((e) => e.id === 'E12')?.body ?? '';
+  assert.match(e12, /^ {2}- After `Transaction is outdated`, or a bare 1010 from the Ethereum RPC for a nonce already used, do not sign again at once/m);
+  assert.match(e12, /not by the refused one's hash: signed again, a transaction can have other bytes and another hash/);
+  assert.match(e12, /Settle every earlier send of this payment by the nonce it was signed with, not by the refused one's hash/);
+  assert.match(e12, /While the account's nonce in blocks \(`System\.Account\.nonce`\) is not past that nonce, the send can still be included: it waits in the pool \(recipe 9 step 1b, or get_transaction\), or behind a nonce gap, where nothing lists it/);
+  assert.match(e12, /Once the account is past that nonce, recipe 9 step 3 finds the block where it was used \(it finds none until that block is finalized: ask again a few seconds later\)\. The account's transaction with that nonce in that block is either this payment or another transaction; if it is another, that send can never be included/);
+  assert.match(e12, /^ {2}- If the transaction with that nonce is this payment, read its result\. If it succeeded, do not send it again\. If the transaction itself failed, it paid its fee and moved nothing\./m);
+  assert.match(e12, /Sign again only what is settled as not done: a send that failed or whose call inside failed \(after fixing the cause; of a batch that stopped part way, only the calls that did not run\), or one that lost its nonce to another transaction, with the nonce from `system_accountNextIndex`/);
+  assert.match(e12, /Keep at most one send of the payment able to run: if another one succeeded, also with a call inside it that failed, replace this one with a harmless transaction of its nonce and a higher tip or higher fees; if several still wait, keep the one with the lowest nonce and replace the others at once the same way/);
+  assert.match(e12, /Behind a nonce gap it runs only once the missing nonces are used: after replacing any other send as below, send a harmless transaction with each missing nonce, not the payment \(Fix bullet 4\)/);
+  assert.match(e12, /Recognise the payment by a hash you wrote down for one of its sends \(recipe 5a, or 5b for a native extrinsic\); a transaction whose hash you wrote down for another payment is that payment\. Only when its hash is none you wrote down/);
+  assert.match(e12, /if anyone else sends from the account, ask them first, since an equal payment of theirs looks the same/);
+  assert.match(e12, /At the account's next nonce while nothing waits \(`system_accountNextIndex` equals `System\.Account\.nonce`\), it is not waiting: it was refused or dropped/);
+  assert.match(e12, /Otherwise wait for it, or replace it with a transaction of the same nonce \(recipe 9\), and do not sign the payment with another nonce/);
+  assert.match(e12, /With no record of a send's nonce, settle every nonce the account used since the first send in the same way/);
+  assert.doesNotMatch(e12, /sign with the next one/);
+  assert.doesNotMatch(e12, /in neither place/);
+  // a used nonce seen in a 1012 does not tell whose transaction was included
+  assert.match(STANDARD.find((s) => s.label === '1012 Transaction is temporarily banned')?.meaning ?? '', /this transaction or another with that nonce was included; do not send it again before you know which/);
+  // the recorded replies get this line and E12 first
+  for (const text of ['1010: Invalid Transaction: Transaction is outdated', '{"code":1010,"message":"Invalid Transaction","data":"Transaction is outdated"}']) {
+    assert.ok(standardMatches(focusText(text)).some((s) => s.label === 'InvalidTransaction Stale'), text);
+    assert.equal(matchEntries(focusText(text))[0]?.entry.id, 'E12', text);
+  }
+});
+
+test('the error @polkadot/api throws from validateTransaction lists E55, although it names only the runtime', () => {
+  // as the library throws it: no camel-case validateTransaction, only the runtime's name in the backtrace
+  const thrown = '4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed\nWASM backtrace:\nerror while executing at wasm backtrace:\n    0: 0xb05592 - portaldot_v3_runtime.wasm!__rustc[4b1ee1ef74718a7b]::rust_begin_unwind\n    1:  0x1f5f9 - portaldot_v3_runtime.wasm!core[973facb28fb2967]::panicking::panic_fmt\n    2: 0x9465bd - portaldot_v3_runtime.wasm!TaggedTransactionQueue_validate_transaction';
+  // the same in a log of more than 6 lines, where only the lines that look like an error are kept
+  const logged = `${thrown}\n    at async main (file:///C:/work/check.mjs:12:3)`;
+  for (const text of [thrown, logged]) {
+    const found = matchEntries(focusText(text));
+    assert.equal(found[0]?.entry.id, 'E34', text);
+    const e55 = found.find((m) => m.entry.id === 'E55');
+    assert.ok(e55, `E55 is not listed for ${text}`);
+    assert.ok(e55.score < 6, 'E55 is related, not the best match');
+  }
+  // a 1002 comes from submitting the bytes, not from this call
+  const submitted = '1002: Verification Error: Runtime error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed\nWASM backtrace:\n    2: 0x9465bd - portaldot_v3_runtime.wasm!TaggedTransactionQueue_validate_transaction';
+  assert.ok(!matchEntries(focusText(submitted)).some((m) => m.entry.id === 'E55'));
 });
 
 test('the numbers of "insufficient funds" are read in tPOT', () => {
@@ -419,7 +477,9 @@ test('standard codes: pool codes, InvalidTransaction reasons, DispatchError kind
 });
 
 test('our list explains some module errors in brackets', () => {
-  assert.equal(listNotes('Revive', 'TransferFailed').note, 'a value larger than the balance (E10)');
+  assert.equal(listNotes('Revive', 'TransferFailed').note, 'a value larger than what the account can spend, E47 (E10)');
+  // a lock gives the same reply, so the entry on locked tPOT is listed with it
+  assert.ok(listNotes('Revive', 'TransferFailed').ids.includes('E47'));
   assert.ok(listNotes('Revive', 'StorageDepositLimitExhausted').ids.includes('E7'));
   assert.deepEqual(listNotes('Contracts', 'OutOfGas').ids, [], 'the Contracts module is not the one E10 speaks of');
   // a bracket in a Basis or Not known part is a block number or a doubt, not a cause

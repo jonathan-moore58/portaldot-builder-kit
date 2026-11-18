@@ -1,5 +1,6 @@
 // Smoke test of a built server. It starts the server over stdio the way an MCP client does, lists
-// the tools and calls two that need no network: convert_amount and convert_address. It needs only
+// the tools, calls three that need no network (convert_amount, convert_address and read_guide), and
+// lists the resources and the prompts. It needs only
 // Node.js 20 or newer and no packages, so it runs before "npm ci". The server is given endpoints
 // that it refuses at once, so no call can reach a node; only --npx uses the network, for npx to
 // fetch the package.
@@ -200,6 +201,14 @@ async function main() {
 
   const phrase = await callTool('convert_address', { address: TEST_PHRASE });
   check(phrase.isError && phrase.text.includes('secret recovery phrase'), 'convert_address: a secret phrase is refused', phrase.text.slice(0, 500));
+
+  // The knowledge pack: read_guide, the resources and the prompt, all offline.
+  const guide = await callTool('read_guide', { topic: 'E12' });
+  check(!guide.isError && /^errors\/E12: /.test(guide.text), 'read_guide reads one section of the knowledge pack, offline', guide.text.slice(0, 300));
+  const res = await request('resources/list', {});
+  check((res.resources ?? []).some((r) => r.uri === 'portaldot://guide/errors'), 'the knowledge files are listed as resources', JSON.stringify((res.resources ?? []).map((r) => r.uri)));
+  const prompts = await request('prompts/list', {});
+  check((prompts.prompts ?? []).some((p) => p.name === 'start_project'), 'the start_project prompt is offered', JSON.stringify((prompts.prompts ?? []).map((p) => p.name)));
 
   check(stray.length === 0, 'stdout carried only protocol messages', stray.slice(0, 3).join('\n'));
 

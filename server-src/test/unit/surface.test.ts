@@ -88,7 +88,11 @@ test('resources and prompts over MCP: list, read, get, and the refusals', async 
     assert.equal((got.messages[0].content as { text: string }).text, `${START.body}\n\n---\n\nWhat I want to build: a ticket shop`);
     const plain = await client.getPrompt({ name: 'start_project' });
     assert.equal((plain.messages[0].content as { text: string }).text, START.body);
-    await assert.rejects(client.getPrompt({ name: 'start_project', arguments: { idea: 'legal winner thank year wave sausage worth useful legal winner thank yellow' } }), /secret recovery phrase/);
+    // the person's own input: invalid params (-32602), so a client that shows only the code does not hide it as an internal error
+    await assert.rejects(client.getPrompt({ name: 'start_project', arguments: { idea: 'legal winner thank year wave sausage worth useful legal winner thank yellow' } }), (e: unknown) => {
+      const err = e as { message?: string; code?: number };
+      return /secret recovery phrase/.test(err.message ?? '') && err.code === -32602;
+    });
     await assert.rejects(client.getPrompt({ name: 'start_project', arguments: { idea: 'x'.repeat(MAX_ARGUMENT + 1) } }));
     await assert.rejects(client.getPrompt({ name: 'no_such_prompt' }));
   } finally {
@@ -132,6 +136,14 @@ test('the server: capabilities, the tools with read_guide, the resources, and in
     // the corrected rule 3: the value and the max fee are not part of the 1010 check
     assert.match(instructions, /gas limit x base fee is more than the sender can spend; the max fee and the value are not part of that check/);
     assert.doesNotMatch(instructions, /plus the value/);
+    // the first 512 characters stand on their own: who made it, read-only, and which tool for what
+    const head = instructions.slice(0, 512);
+    assert.match(head, /^Portaldot V3 chain tools and knowledge, by the Bridge Zero team\./);
+    assert.match(head, /Read-only: no tool needs a key, signs or sends\./);
+    for (const name of ['convert_address', 'convert_amount', 'estimate_eth_transaction', 'explain_error', 'read_guide']) assert.ok(head.includes(name), name);
+    assert.match(head, /read_guide for how-to\.$/m);
+    // a waiting transaction is invisible on the Ethereum RPC, and a resend can pay twice
+    assert.match(instructions, /The Ethereum RPC cannot see a transaction that waits for its block: .* Never send again because of that, or the payment can go twice: get_account shows whether one waits/);
     // every snake_case word names a tool or a prompt
     const names = new Set([...tools.map((t) => t.name), ...prompts.map((p) => p.name)]);
     for (const word of instructions.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) assert.ok(names.has(word), word);

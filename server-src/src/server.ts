@@ -27,20 +27,23 @@ function promptsLine(prompts: ServedPrompt[]): string | null {
 
 /**
  * Read by the model at the start of a session, so it is short and says when to use what. It must stay
- * under 4,096 characters (test/server.test.mjs and test/unit/surface.test.ts check it).
+ * under 4,096 characters (test/server.test.mjs and test/unit/surface.test.ts check it), and its first
+ * 512 characters must stand on their own: some clients rely on those most (Codex asks for that).
  */
 export function instructionsFor(prompts: ServedPrompt[]): string {
   return [
     'Portaldot V3 chain tools and knowledge, by the Bridge Zero team. An independent tool, not an official Portaldot one.',
-    'Read-only: no tool needs a key, and none signs or sends. The most a tool returns is unsigned call data. Never pass a private key or secret phrase to a tool.',
+    'Read-only: no tool needs a key, signs or sends. Never pass a private key or secret phrase to a tool.',
+    'For any Portaldot V3 task use these tools, not memory: convert_address before an address crosses between 5... and 0x, convert_amount for amounts (14 decimals native, 18 on the Ethereum side), estimate_eth_transaction before an Ethereum send, explain_error for errors, read_guide for how-to.',
     '',
-    'Use these tools whenever a task touches Portaldot V3 (tokens POT and tPOT, the Revive module, endpoints on portaldot.dev) instead of answering from memory. Habits from Polkadot, Substrate and Ethereum are wrong here in several places:',
+    'The most a tool returns is unsigned call data. A task is a Portaldot V3 task when it names Portaldot, the tokens POT or tPOT, an endpoint on portaldot.dev, or the Revive module on Portaldot. Habits from Polkadot, Substrate and Ethereum are wrong here in several places:',
     '1. Two address forms. Native accounts are SS58 and start with 5; contracts and MetaMask use 0x. They are linked by a rule, not by a shared key, and the wrong form loses funds. Call convert_address before using an address on the other side.',
     '2. Two scales. Native amounts have 14 decimals; the Ethereum side shows the same token with 18 (1 native unit = 10000 wei). Call convert_amount instead of doing the arithmetic.',
     '3. Gas on the Ethereum side includes the storage deposit, so estimates look huge. The node refuses a transaction (error 1010) when gas limit x base fee is more than the sender can spend; the max fee and the value are not part of that check. A transaction whose value cannot be paid is included, fails, and still costs the fee (measured with real transactions on Nov 15, 2026). Call estimate_eth_transaction before sending one.',
     '4. eth_getLogs misses contract events from native calls. Call get_contract_events.',
     "5. Never guess a call's name, arguments or index. Call search_chain, then describe_item; encode_call gives the exact bytes.",
-    '6. The default network is the testnet (tPOT, Ethereum chain id 420420777). The mainnet (POT, 780780777) has no public Ethereum RPC and held no contracts or tokens on Nov 13, 2026.',
+    '6. The default network is the testnet (tPOT, Ethereum chain id 420420777). The mainnet (POT, 780780777) has no public Ethereum RPC and held no contracts or tokens on Nov 14, 2026.',
+    '7. The Ethereum RPC cannot see a transaction that waits for its block: it answers null for its hash, and the "pending" nonce count equals "latest" (measured with real transactions on Nov 15, 2026). Never send again because of that, or the payment can go twice: get_account shows whether one waits, and sign with an explicit nonce.',
     '',
     "For how to do something and why the chain behaves as it does, call read_guide: the kit's knowledge by section: recipes, addresses, amounts and fees, contracts, native modules, open questions. " +
       'With no arguments it lists every section; {"query": "deploy deposit"} searches them; {"topic": "E12"} or {"topic": "recipe 4"} reads one. The same files are resources at portaldot://guide/<name>.',
@@ -88,5 +91,5 @@ export function start(): void {
   process.once('SIGINT', () => stop('SIGINT'));
   process.once('SIGTERM', () => stop('SIGTERM'));
 
-  log(`ready on stdio, ${TOOLS.length} tools, the knowledge files as resources, ${PROMPTS.length} prompt${PROMPTS.length === 1 ? '' : 's'}, node ${process.version}`);
+  log(`ready on stdio, ${TOOLS.length} tools, the knowledge files as resources, ${PROMPTS.length} prompt${PROMPTS.length === 1 ? '' : 's'}, version ${SERVER_INFO.version}, node ${process.version}`);
 }

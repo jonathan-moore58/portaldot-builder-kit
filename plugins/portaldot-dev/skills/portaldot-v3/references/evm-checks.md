@@ -83,7 +83,7 @@ What it means:
 
 ## 3. Tokens of the Assets module seen from Solidity
 
-Every asset of the Assets module has an ERC-20 interface at a fixed address. Reads were checked against the Assets module's storage at the same block (463542) for assets 2, 4242 and 7777, and for pool assets at block 463587. Writes were checked on Nov 15, 2026 on pUSD (asset 7777): by dry runs (`eth_call`, `eth_estimateGas` and `debug_traceCall`, blocks 477746 to 478127) and by transactions sent from our own test accounts, signed with ethers 6, at a base fee of 15130 wei (blocks 478194 to 478206).
+Every asset of the Assets module has an ERC-20 interface at a fixed address. Reads were checked against the Assets module's storage at the same block (463542) for assets 2, 4242 and 7777, and for pool assets at block 463587. Writes were checked on Nov 15, 2026 on pUSD (asset 7777): by dry runs (`eth_call`, `eth_estimateGas` and `debug_traceCall`, blocks 477746 to 478127) and by transactions sent from our own test accounts, signed with ethers 6, at a base fee of 15130 wei (blocks 478195 to 478206; the pUSD they moved came from a native swap in block 478194).
 
 - The rule: the asset id as a 4-byte big-endian number, then 12 zero bytes, then `0001`, then `0000`. Asset 2 is `0x0000000200000000000000000000000000010000`; asset 7777 (`0x1e61`) is `0x00001e6100000000000000000000000000010000`.
 - What answered there: `name()`, `symbol()`, `decimals()`, `totalSupply()` and `balanceOf(holder)` returned exactly the module's `assets.metadata` and `assets.asset(id).supply`, and `assets.account(id, holder).balance` for the largest holder (given as its `0x` form). Asset 2: "test asset", "TEST", 18, 15000000000000000000. The other two matched the same way, and so did `allowance(owner, spender)` with `assets.approvals` (Nov 15, 2026).
@@ -278,7 +278,7 @@ Read by read: `totalSupply()` and `decimals()` of asset 2's token address (each 
 
 ## 11. Calls between contracts and payments
 
-Deployless `eth_call`s from the Treasury's `0x` form and the node's own dry run (`reviveApi.instantiate`), testnet blocks 477807 to 478119, on Nov 15, 2026; nothing was sent. The probes were built with solc 0.8.27 for `cancun` with the IR pipeline, and their payees were created inside the same call (see the last item). All Checked.
+Deployless `eth_call`s from the Treasury's `0x` form and the node's own dry run (`reviveApi.instantiate`), testnet blocks 477807 to 478187, on Nov 15, 2026; nothing was sent. The probes were built with solc 0.8.27 for `cancun` with the IR pipeline, and their payees were created inside the same call (see the last item). All Checked.
 
 - Gas a payee receives, in `eth_call`: with value, the cap + 7,461,079. `send()`, `transfer()` and `call{value: v, gas: 0}` gave 7,461,079; caps of 2300, 50000, 10^9 and 10^12 gave the cap + 7,461,079; `try I(x).f{value: v, gas: N}()` gave N + 7,396,013. Without value, a cap of 2300 gave 2300 + 7,461,079, but a cap of 0 failed.
 - That is enough for a payment to an existing account or to a new address, an empty `receive()`, an event, or overwriting a slot that already exists. It is not enough to write a new slot, which needs a cap worth about 3.84 tPOT of gas (the slot deposit, so the number of gas moves with the gas price: 253,659,525,697,540 at 15140 wei per gas), or to make any external call, which needs about 7.7 x 10^7 gas (77,158,784 and 77,152,587 for two different contracts). Caps of 2300 and 50000 are no better than 0 for either, and caps up to 10^12 are no better than 0 for a new slot.

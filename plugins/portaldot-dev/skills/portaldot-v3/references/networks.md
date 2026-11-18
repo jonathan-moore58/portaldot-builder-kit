@@ -82,7 +82,7 @@ Checked Nov 14, 2026 from block timestamps; the same times were noted in October
 - Ethereum RPC client: `eth-rpc/main-fddd431` (Checked Nov 14, 2026). On Nov 14, 2026 it served `eth_getBalance` and `eth_call` at blocks from 1 to the head, and block 1 itself. In October 2026 it refused state older than about 256 blocks; see `open-questions.md` item 1. `evm-checks.md` lists the methods it answers.
 - `eth_getLogs` has no block-range limit: block 0 to the latest answered, in under a second with an address filter. A `fromBlock` after the `toBlock` answers `{"code":-32000,"message":"Failed to filter logs"}` (Checked Nov 14, 2026; `evm-checks.md` section 6).
 - Request speed (Experience): one request at a time over the WebSocket gives about 19 answers a second; HTTP batches of 50 requests read 300 blocks in about 3 seconds. Keep load modest: these are shared public nodes.
-- All public RPC endpoints are on `*.portaldot.dev` and run by the chain team (Checked Nov 13, 2026). A third-party gateway seen on Nov 13, 2026 forwards to these same hosts. Both testnet endpoints answer through Cloudflare, and the Ethereum RPC has nginx 1.24.0 behind it (Checked Nov 15, 2026, from the response headers and an error page).
+- All public RPC endpoints are on `*.portaldot.dev` and run by the chain team (Checked Nov 13, 2026). A third-party gateway seen on Nov 13, 2026 forwards to these same hosts. Both testnet endpoints answer through Cloudflare (Checked Nov 15, 2026, from the response headers).
 
 ### Limits of the public endpoints
 
@@ -92,7 +92,7 @@ Checked Nov 15, 2026 on the testnet. CORS, the batch of 101, the follow limit an
 |---|---|---|
 | CORS | `access-control-allow-origin: *` on preflight and on POST, with `allow-headers` and `allow-methods` `*` on preflight; the WebSocket upgrade with another site's `Origin` was accepted | the same |
 | JSON-RPC batch | 101 calls answered whole (the largest tried) | the same |
-| Request body | 1,000,128 bytes passed; 2,000,128 bytes got HTTP 413 as an nginx HTML page (`<title>413 Request Entity Too Large</title>`, `nginx/1.24.0 (Ubuntu)`), not JSON-RPC (E52) | not measured |
+| Request body | 1,000,128 bytes passed; 2,000,128 bytes got HTTP 413 as an HTML page (`<title>413 Request Entity Too Large</title>`), not JSON-RPC (E52) | not measured |
 | WebSocket connections | 10 held open together by one client; more not tried | the same |
 | Subscriptions on one connection | 20 `eth_subscribe` `["newBlockHeaders"]` | 20 tried, all accepted except a 5th `chainHead_v1_follow`: `{"code":-32800,"message":"Maximum number of chainHead_follow has been reached"}` (E52) |
 | Idle WebSocket | the server pings every 30 s; a socket idle for 125 s stayed open | the same |

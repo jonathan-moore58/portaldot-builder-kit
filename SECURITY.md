@@ -19,6 +19,6 @@ Fixes go into the newest version only.
 
 ## Reporting a problem
 
-Please report a security problem privately: open the repository on GitHub, choose the Security tab, then "Report a vulnerability". Do not open a public issue for it. Say what you saw, which version you used (the server reports it when it starts), and the steps that show the problem. We answer in that report.
+Please report a security problem privately: open the repository on GitHub, choose the Security tab, then "Report a vulnerability". Do not open a public issue for it. Say what you saw, which version you used (in a copy of this repository it is the `version` in `package.json`; the server also gives it to your assistant when it connects), and the steps that show the problem. We answer in that report.
 
 Other problems, such as a fact that is wrong or out of date, go to the issues of the repository.

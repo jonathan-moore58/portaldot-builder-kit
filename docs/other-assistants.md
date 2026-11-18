@@ -4,7 +4,7 @@ by the Bridge Zero team
 
 The kit's chain tools are an ordinary MCP server that runs on your computer and talks over stdio. Any coding assistant that can start such a server can use them. In Claude Code, install the plugin as the [README](../README.md#install) says; this page is for the other assistants.
 
-> **How we know what is on this page.** Each assistant's section rests on that assistant's official documentation, as we read it on Nov 15 and 16, 2026. We have not run these assistants ourselves. What we did run: Claude Code with the plugin; the server over stdio with our own test client; and, on Windows, starts of the server through npx from a packed copy and from a local git copy of this repository, and from a global install. Where the documentation is unclear, or two official pages disagree, the section says so and gives the safer choice. If your assistant behaves differently, please [open an issue](https://github.com/jonathan-moore58/portaldot-builder-kit/issues).
+> **How we know what is on this page.** Each assistant's section rests on that assistant's official documentation, as we read it on Nov 15 and 16, 2026. We have not run these assistants ourselves. What we did run: Claude Code with the plugin, up to version 0.2.1; the server over stdio with our own test client; and, on Windows on Nov 16, 2026, starts of the server of version 0.2.1 through npx from a packed copy and from a local git copy of this repository, and from a global install. Where the documentation is unclear, or two official pages disagree, the section says so and gives the safer choice. If your assistant behaves differently, please [open an issue](https://github.com/jonathan-moore58/portaldot-builder-kit/issues).
 
 ## Find your assistant
 
@@ -48,13 +48,15 @@ Then point your assistant at this command, with the absolute path of the folder 
 node /absolute/path/to/portaldot-builder-kit/plugins/portaldot-dev/server/index.mjs
 ```
 
-The server is one built file with nothing to install. It answered in 0.8 to 0.9 seconds in our tests, on Node.js 24.12 and 20.20. To update it, run `git pull` in that folder and restart your assistant.
+The server is one built file with nothing to install. It answered in 0.3 to 1.5 seconds in our tests of version 0.3.0, on Node.js 24.12 on Windows (Nov 16, 2026). To update it, run `git pull` in that folder and restart your assistant.
 
 ### Way B: npx, nothing to clone
 
 ```
 npx -y github:jonathan-moore58/portaldot-builder-kit
 ```
+
+To stay on one release, add its tag: `github:jonathan-moore58/portaldot-builder-kit#v0.3.0`. Without a tag, npx starts what the main branch holds at that moment.
 
 npm fetches the package again at every start, and that is slow. On Nov 16, 2026, on Windows, with a local git copy of this repository in place of GitHub, a start took 14 to 16 seconds once npm had the package in its cache, and 42 seconds the first time. From GitHub, the download comes on top. That is longer than some assistants wait for a server to start:
 
@@ -234,7 +236,7 @@ On Windows, way B: `"command": "cmd"`, `"args": ["/c", "npx", "-y", "github:jona
 - `start_project`: Cursor lists MCP prompts as supported, but does not say where they appear.
 - Resources: listed as supported; whether the model or only you can read them is not stated. `read_guide` gives the same text.
 
-Standing instructions: `AGENTS.md`, or a rule file `.cursor/rules/portaldot.mdc` (a plain `.md` file in that folder is ignored) ([text](#standing-instructions)).
+Standing instructions: `AGENTS.md`, or a rule file `.cursor/rules/portaldot.mdc` that starts with the three lines `---`, `alwaysApply: true`, `---`. Cursor's rules page says such a rule is always included, while a rule with `alwaysApply: false` and no description or globs is included only when you @-mention it; a plain `.md` file in that folder is ignored ([text](#standing-instructions)).
 
 Official pages: https://cursor.com/docs/mcp and https://cursor.com/help/customization/mcp
 
@@ -269,7 +271,7 @@ On Windows, way B: `command = "cmd"` and `args = ["/c", "npx", "-y", "github:jon
 
 **What the documentation says that matters here**
 
-- Codex gives a server 10 seconds to start (`startup_timeout_sec`). When it builds its first list of tools, it waits at most 1 second in all for servers not marked `required` (`mcp_optional_startup_grace_ms`, default 1000; 0 makes it wait for each server's own timeout). The pages do not say whether a server that misses that second is added later. Way A answered in 0.8 to 0.9 seconds in our tests, close to that second, so the snippets set the grace to 0. It is a top-level setting: keep it above the first `[table]` line, or TOML reads it as part of that table.
+- Codex gives a server 10 seconds to start (`startup_timeout_sec`). When it builds its first list of tools, it waits at most 1 second in all for servers not marked `required` (`mcp_optional_startup_grace_ms`, default 1000; 0 makes it wait for each server's own timeout). The pages do not say whether a server that misses that second is added later. Way A answered in 0.3 to 1.5 seconds in our tests, at times more than that second, so the snippets set the grace to 0. It is a top-level setting: keep it above the first `[table]` line, or TOML reads it as part of that table.
 - Variables: values in a `[mcp_servers.portaldot.env]` table, or `env_vars = ["HTTPS_PROXY"]` to pass on your own variable. The pages do not say which variables the server gets without them.
 - With `default_tools_approval_mode = "writes"` in the server's table, Codex asks only before tools that are not marked read-only. All 16 tools are marked read-only.
 - Codex run inside WSL uses the Linux home folder, not `%USERPROFILE%\.codex`.
@@ -486,7 +488,7 @@ On Windows, way B: `"command": "cmd"`, `"args": ["/c", "npx", "-y", "github:jona
 
 - Server instructions, `start_project` and resources: not stated. `read_guide` gives the knowledge in any case.
 
-Standing instructions: a rule file in `.aiassistant/rules/` (Settings | Tools | AI Assistant | Rules), with the rule type Always. Agents in AI Chat read `AGENTS.md` ([text](#standing-instructions)).
+Standing instructions: a rule file in `.aiassistant/rules/` (Settings | Tools | AI Assistant | Rules), with the rule type Always. Most agents in AI Chat read `AGENTS.md` (Claude Agent reads `CLAUDE.md`) ([text](#standing-instructions)).
 
 Official page: https://www.jetbrains.com/help/ai-assistant/mcp.html
 
@@ -926,8 +928,8 @@ What a client's author may want to know:
 | Protocol versions | Our test client negotiated 2025-11-25 and 2026-07-28, and every check passed in both. |
 | Server | name `portaldot-dev`, title "Portaldot V3 chain tools, by the Bridge Zero team", and the version of the release. |
 | Capabilities | `tools`; `resources`, with a list that does not change and no subscriptions; `prompts` only when the build has one. |
-| Instructions | Sent in the answer to `initialize`, under 3,000 characters. |
-| Tools | 16. Every one is annotated `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`; `openWorldHint` is `true` for the 14 that read the chain and `false` for `convert_amount` and `read_guide`. Names match `^[a-z][a-z0-9_]*$` and have at most 24 characters. Answers are text, at most 19,000 characters. |
+| Instructions | Sent in the answer to `initialize`, under 4,096 characters. |
+| Tools | 16. Every one is annotated `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`; `openWorldHint` is `true` for the 14 that read the chain and `false` for `convert_amount` and `read_guide`. Names match `^[a-z][a-z0-9_]*$` and have at most 24 characters. Answers are text; a longer answer is cut at 19,000 characters and ends with a note that says so. |
 | Resources | `portaldot://guide/<name>`, one per knowledge file, `text/markdown`. |
 | Prompts | `start_project`, title "Start a Portaldot V3 project", one optional argument `idea`. |
 | Authentication | None: no API key, no login, no account. |
@@ -940,7 +942,7 @@ What a client's author may want to know:
 
 ## Standing instructions
 
-Several assistants do not say whether they pass the server's instructions to the model. Paste this block into your project's instructions file, so that the model knows when to use the tools. It takes its habits from rules 1, 2, 3, 4, 6 and 11 of the knowledge pack: `read_guide {"topic": "portaldot-v3/rules-prevent-costly-mistakes"}`, or [SKILL.md](../plugins/portaldot-dev/skills/portaldot-v3/SKILL.md) in this repository.
+Several assistants do not say whether they pass the server's instructions to the model. Paste this block into your project's instructions file, so that the model knows when to use the tools. It takes its habits from rules 1, 2, 3, 4, 5, 6 and 11 of the knowledge pack: `read_guide {"topic": "portaldot-v3/rules-prevent-costly-mistakes"}`, or [SKILL.md](../plugins/portaldot-dev/skills/portaldot-v3/SKILL.md) in this repository.
 
 ```markdown
 ## Portaldot V3
@@ -951,6 +953,7 @@ This project builds on Portaldot V3 (tokens tPOT and POT, the Revive module, end
 - Addresses: every account has a `5...` form and a `0x` form, linked by a rule, not by a shared key. Run `convert_address` before paying across the two sides.
 - Amounts: native amounts have 14 decimals; the Ethereum side shows 18 (1 base unit = 10^4 wei). Use `convert_amount`, and BigInt for every amount.
 - Ethereum transactions: gas includes the storage deposit, so estimates look huge. Take the gas limit from `eth_estimateGas` (up to 10 percent more, never less), never from habit or from `forge script`, and run `estimate_eth_transaction` before sending.
+- Before each send, check whether a transaction of the account still waits for its block: `get_account` (it reads `system_accountNextIndex`). The Ethereum RPC cannot see a waiting transaction: `eth_getTransactionByHash` answers `null` and the "pending" count equals "latest" (measured on Nov 15, 2026). Never resend because of that; sign with an explicit nonce.
 - Never put a real private key or recovery phrase in code, config, logs or a prompt. The tools never need one, and none signs or sends. Use a fresh test key, and the testnet first.
 - The tools say when a fact was measured and when it was only reported by others; pass that on.
 ```
@@ -960,12 +963,12 @@ Where to put it:
 | Assistant | File |
 | --- | --- |
 | VS Code with GitHub Copilot | `AGENTS.md` or `.github/copilot-instructions.md` |
-| Cursor | `AGENTS.md`, or a rule `.cursor/rules/portaldot.mdc` |
+| Cursor | `AGENTS.md`, or a rule `.cursor/rules/portaldot.mdc` with `alwaysApply: true` |
 | Codex | `AGENTS.md` |
 | Claude Desktop | no file: the app's standing instructions, for example a Cowork project's Instructions |
 | GitHub Copilot CLI | `AGENTS.md` (it also merges `.github/copilot-instructions.md`, `CLAUDE.md` and `GEMINI.md`: use one) |
 | Gemini CLI | `GEMINI.md`, or `AGENTS.md` once it is in `context.fileName` |
-| JetBrains AI Assistant | a rule in `.aiassistant/rules/` of type Always; its agents read `AGENTS.md` |
+| JetBrains AI Assistant | a rule in `.aiassistant/rules/` of type Always; most of its agents read `AGENTS.md` |
 | JetBrains Junie | `.junie/AGENTS.md` if it exists, otherwise `AGENTS.md` |
 | Devin Desktop | `AGENTS.md` |
 | Cline | `AGENTS.md` or a file in `.clinerules/` |

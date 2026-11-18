@@ -85,6 +85,7 @@ Plain notes (Experience, from the chain's own call documentation, unless marked)
 - `batchAll` is all or nothing. `batch` (`0x0100`) stops at the first failure but keeps the calls before it. `forceBatch` (`0x0104`) "allows errors and won't interrupt" (the chain's text, Checked Nov 14, 2026). At most 10922 calls fit in one batch (`utility.batchedCallsLimit`, Checked Nov 14, 2026).
 - `assets.create` starts the token with no supply; `assets.mint` adds it. Creating an asset reserves `assets.assetDeposit` (1 tPOT), an approval `assets.approvalDeposit` (0.1), and metadata `assets.metadataDepositBase` (0.1 tPOT on the testnet, 0.5 POT on the mainnet) plus 0.06 per byte (`assets.metadataDepositPerByte`) (Checked Nov 14, 2026).
 - `nfts.mint` needs the collection first. A collection reserves `nfts.collectionDeposit` (1 tPOT) and an item `nfts.itemDeposit` (0.1 tPOT on the testnet, 0.05 POT on the mainnet) (Checked Nov 14, 2026).
+- `nfts.nextCollectionId` holds the id that the next collection gets ("Stores the `CollectionId` that is going to be used for the next collection", the chain's text). Before the collection exists, a mint into it answers `Nfts.NoConfig`, while a `utility.batchAll` of `nfts.create` and `nfts.mint` into that id was accepted (Checked Nov 16, 2026 by dry run).
 - In Nfts, the "Account" attribute namespace needs the item's owner to call `nfts.approveItemAttributes` (`0x2f16`) first, or the call fails with `NoPermission` (Experience, from the upstream code; not tested on V3).
 
 ## Argument types in plain words
@@ -153,7 +154,7 @@ Checked Nov 14, 2026, the same on both networks:
 Checked Nov 15, 2026 on the testnet:
 
 - A bond is a hold, not a lock. The 8 accounts with a staking ledger and the 6 nomination pool members all had `frozen` 0 (block 477769). A stash's bond sits in `balances.holds` as `staking.Staking`, a pool member's stake as `delegatedStaking.StakingDelegation`, and both count in `reserved`.
-- `Staking.bond` can bond tPOT that a vesting lock holds: from an account with 25.61 tPOT free, 10 of it locked, a bond of 25 tPOT left exactly the free balance less 25.1 tPOT spendable (dry runs on two accounts). What stays spendable beside a lock, hold or reserve, and the errors past it: Balances in `native-call-errors.md`, and E47.
+- `Staking.bond` can bond tPOT that a vesting lock holds: from an account with 25.61 tPOT free, 10 of it locked, a bond of 25 tPOT left exactly the free balance less 25.1 tPOT spendable, and on a second vesting account (9.7 tPOT locked) a bond of 30 tPOT left the free balance less 30.1 tPOT (dry runs). What stays spendable beside a lock, hold or reserve, and the errors past it: Balances in `native-call-errors.md`, and E47.
 
 ## Vesting
 

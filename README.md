@@ -8,6 +8,10 @@ Measured facts and read-only chain tools for building on Portaldot V3. It is a p
 
 This is an independent project. The Portaldot team did not make it and does not endorse it.
 
+## Quick start
+
+Claude Code: `claude plugin marketplace add jonathan-moore58/portaldot-builder-kit`, then `claude plugin install portaldot-dev@bridge-zero`. Any other MCP client: clone this repository and point the client at `node <clone>/plugins/portaldot-dev/server/index.mjs`; [docs/other-assistants.md](docs/other-assistants.md) has the settings for 15 assistants. Both ways need Node.js 20 or newer and git; [Install](#install) has the details.
+
 ## Why it exists
 
 Portaldot V3 looks like Polkadot on one side and like Ethereum on the other. In a few places it behaves like neither, and those places cost money:
@@ -75,7 +79,7 @@ claude --plugin-dir ./plugins/portaldot-dev
 The chain tools are an ordinary MCP server on stdio, so other coding assistants can load them too. You need Node.js 20 or newer, and git. There are two ways to start the server:
 
 - **A local copy (recommended).** Clone this repository and point your assistant at `node /absolute/path/to/portaldot-builder-kit/plugins/portaldot-dev/server/index.mjs`. It starts in about a second; `git pull` updates it.
-- **npx, nothing to clone.** `npx -y github:jonathan-moore58/portaldot-builder-kit`. npm fetches the package at every start: in our tests on Windows, from a local git copy, that took 14 to 16 seconds, and 42 seconds the first time. Some assistants stop waiting sooner. Always write the `github:` form: we do not publish this package on the npm registry.
+- **npx, nothing to clone.** `npx -y github:jonathan-moore58/portaldot-builder-kit`. npm fetches the package at every start: in our tests on Windows, from a local git copy, that took 14 to 16 seconds, and 42 seconds the first time. Some assistants stop waiting sooner. Always write the `github:` form: we do not publish this package on the npm registry. To stay on one release, add its tag: `npx -y github:jonathan-moore58/portaldot-builder-kit#v0.3.0`. Without a tag, npx starts what the main branch holds at that moment.
 
 Many assistants take this shape (the page below has the exact one for each):
 
@@ -151,7 +155,7 @@ npm run test:server    # the built server, over stdio, against the live chains
 ```
 
 - `node scripts/gen-knowledge.mjs` rebuilds what the server carries from the knowledge pack: the error list and the table of native-call replies (from `references/errors.md` and `references/native-call-errors.md`), the sections that `read_guide` and the resources serve (from each skill's `SKILL.md` and `references/*.md`), and the prompts (from each `SKILL.md` with a line `mcp-prompt: <name>`). `--check` writes nothing and fails when a file is out of date.
-- `node scripts/gen-metadata.mjs` saves the chains' runtime metadata into the source, so a session does not download it. It needs both networks to be reachable and stamps the day it ran. Run it after a runtime upgrade. Until then the server downloads the new metadata by itself: it is slower to start, it still reads the new runtime, and every answer starts with a warning that the dated facts were measured on the older runtime.
+- `node scripts/gen-metadata.mjs` saves the chains' runtime metadata into the source, so a session does not download it. It needs both networks to be reachable and stamps the day it ran. Run it after a runtime upgrade. Until then the server downloads the new metadata by itself: it is slower to start, it still reads the new runtime, and an answer for which a tool asked the node starts with a warning that the dated facts were measured on the older runtime (`read_guide` and `convert_amount` never ask it, and `explain_error` asks it only to name a module error).
 - `node scripts/call.ts <tool> '<json>'` runs one tool from source.
 - `node build.mjs --outdir=<folder>` builds into another folder and leaves the plugin alone.
 - `node test/smoke.test.mjs --server=<path>` checks another build; `--npx=<spec>` checks the server the way npx starts it.
@@ -166,15 +170,15 @@ Where the facts come from. On Nov 15, 2026 we sent 65 transactions on the testne
 
 How the kit itself is tested. Numbers from November 16, 2026, on Node.js 24 and Windows:
 
-- 239 unit tests, with no network.
-- 132 live tests, which read the testnet and the mainnet.
-- 199 checks of the built server over stdio, in both protocol modes of the MCP client.
-- 13 smoke checks of the built server with no network, also run on Node.js 20.
+- 244 unit tests, with no network.
+- 133 live tests, which read the testnet and the mainnet.
+- 205 checks of the built server over stdio, in both protocol modes of the MCP client.
+- 16 smoke checks of the built server with no network, also run on Node.js 20.
 - A copy without `node_modules` builds to the same file, byte for byte, and `npm run check:bundle` fails when the committed server is not what the source builds.
-- The CI badge at the top shows the same checks on Linux, macOS and Windows.
-- 12 developer questions, each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web), on version 0.1.0. With the plugin 24 of 24 answers were right; without it 16 of 24. The questions and their graders are in `plugins/portaldot-dev/evals/`. This repeats the run: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
+- The CI badge at the top shows the type check, the unit tests, the generated-file and bundle checks and the smoke test on Linux, macOS and Windows; the live tests and the end-to-end checks are run by hand.
+- 12 developer questions (01 to 12), each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web), on version 0.1.0. With the plugin 24 of 24 answers were right; without it 16 of 24. Questions 13 to 23, and a new prompt and grader for question 2 that follow the corrected 1010 rule, came with 0.3.0 and have not been run yet; question 2's result from 0.1.0 does not apply to its new form. The questions and their graders are in `plugins/portaldot-dev/evals/`. This runs all 23: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
 
-What was not checked: the other assistants themselves (their sections rest on their documentation), the start by `npx` from GitHub before this version was published (we ran it from a local git copy and from a packed copy), and deploying by Ethereum transaction, with Hardhat, `forge create` or anything else (our deployments used native calls; our own Ethereum transactions were transfers, token calls, contract calls sent with `cast`, and native calls through the pallets address).
+What was not checked: the other assistants themselves (their sections rest on their documentation), the start by `npx` of this version, from GitHub or elsewhere (we measured npx starts on Nov 16, 2026 with the server of version 0.2.1, from a local git copy and from a packed copy), and deploying by Ethereum transaction, with Hardhat, `forge create` or anything else (our deployments used native calls; our own Ethereum transactions were transfers, token calls, contract calls sent with `cast`, and native calls through the pallets address).
 
 Two limits to know:
 
@@ -185,7 +189,7 @@ Two limits to know:
 
 Version 0.3.0, November 2026. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-The Claude Code plugin was checked on Claude Code 2.1.325; much older versions reject the plugin's manifest. For other assistants see [docs/other-assistants.md](docs/other-assistants.md).
+Version 0.2.1 of the plugin was checked on Claude Code 2.1.325; much older versions reject the plugin's manifest. For other assistants see [docs/other-assistants.md](docs/other-assistants.md).
 
 The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-builder-kit/issues.
 

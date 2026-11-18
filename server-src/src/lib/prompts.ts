@@ -1,7 +1,7 @@
 // MCP prompts made from the skills: every SKILL.md whose front matter has a line "mcp-prompt: <name>"
 // (src/generated/prompts.ts). A client shows them to people as ready-made starts of a conversation.
 // With no such file the server offers no prompt, and starts as usual.
-import type { McpServer } from '@modelcontextprotocol/server';
+import { ProtocolError, ProtocolErrorCode, type McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod';
 import { PROMPT_ENTRIES, type PromptEntry } from '../generated/prompts.ts';
 import { holdsRecoveryPhrase } from './secrets.ts';
@@ -59,10 +59,13 @@ export function promptText(p: ServedPrompt, value?: string): string {
   return `${p.body}\n\n---\n\n${p.argument.label}: ${v}`;
 }
 
-/** Refuses an argument that holds a secret phrase: it would go to the model with the prompt. */
+/**
+ * Refuses an argument that holds a secret phrase: it would go to the model with the prompt. The input is
+ * the person's own, so the client gets invalid params (-32602), not an internal error that may hide the text.
+ */
 function refuseSecret(p: ServedPrompt, value: string | undefined): void {
   if (value && value.length >= 35 && holdsRecoveryPhrase(value)) {
-    throw new Error(`The ${p.argument?.name ?? 'argument'} of the prompt ${p.name} holds what looks like a secret recovery phrase. Never share one: remove it and try again. If it is real, treat the account as exposed and move its funds.`);
+    throw new ProtocolError(ProtocolErrorCode.InvalidParams, `The ${p.argument?.name ?? 'argument'} of the prompt ${p.name} holds what looks like a secret recovery phrase. Never share one: remove it and try again. If it is real, treat the account as exposed and move its funds.`);
   }
 }
 

@@ -58,7 +58,7 @@ function dryRunSection(ctx: CallContext, built: BuiltCall, run: RunResult, parse
     `  how: from ${from} to the pallets address, with these call bytes as data and value 0, through ${through}. ${ranAs}`,
     ...innerCallNotes(callNames(index, built.call)).map((n) => `  ${n}`),
     '  Checked on Nov 15, 2026 with 143 such dry runs in 18 modules on the testnet: each answered with a gas figure or with "Failed to dispatch call:" and the call\'s own error, ' +
-      'and from the 0x form of a linked account the call ran as that account. A dry run does not check the fee (the lines above do), and no sent transaction has confirmed these answers.',
+      'and from the 0x form of a linked account the call ran as that account. A dry run does not check the fee (the lines above do). Transactions we sent on Nov 15, 2026 confirmed a few of these answers (a transfer above the balance, Proxy.NotProxy, TransactionStorage.renew of nothing) and showed two that mislead (a valid TransactionStorage.store or renew answers BadContext in a dry run, and succeeded when sent; a Proxy.proxy whose proxy type does not cover the call is accepted in a dry run, and when sent it succeeded while the call inside failed with System.CallFiltered): read_guide {"topic": "native-call-errors"}. The others rest on dry runs alone.',
   ];
 }
 
@@ -151,7 +151,7 @@ async function senderLines(ctx: CallContext, built: BuiltCall, amounts: bigint, 
   }
   const { gasLimit, maxFee } = ethLimits(reading.estimate, reading.gasPrice, 0n);
   // The node's rule, measured by real sends on Nov 15, 2026 (lib/evm.ts): gas limit x base fee against the balance.
-  const acceptance = acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: 0n, balance: reading.balance });
+  const acceptance = acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: 0n, balance: reading.balance, maxFee });
   const pool = await readPoolNonce(conn, holder.holderSs58).catch((): PoolNonce | null => null);
   text.push(
     `  gas estimate: ${reading.estimate}; gas price: ${reading.gasPrice} wei per gas`,

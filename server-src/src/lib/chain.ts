@@ -143,7 +143,7 @@ export function specWarning(network: Network, live: { genesis: string; specVersi
   if (!Number.isSafeInteger(live.specVersion) || live.specVersion === saved.specVersion) return null;
   return (
     `WARNING: the ${network.label} now runs runtime spec ${live.specVersion}, and the facts in these tools that carry a date were measured on spec ${saved.specVersion}: after this runtime upgrade they may no longer hold. ` +
-    'What the tools read live is still right. Update the plugin: a newer version may have the facts checked on the new runtime.'
+    'What the tools read live is still right. Update the Portaldot Builder Kit to its newest version: it may have the facts checked on the new runtime.'
   );
 }
 

@@ -102,6 +102,17 @@ test('a 1014 text gives the measured meaning and E12', async () => {
   assert.equal(connects, 0);
 });
 
+test('a used nonce ("Transaction is outdated") says to look up the earlier send, not to sign with the next nonce', async () => {
+  for (const text of ['1010: Invalid Transaction: Transaction is outdated', '{"code":1010,"message":"Invalid Transaction","data":"Transaction is outdated"}']) {
+    const r = await explain(text);
+    assert.match(r.text, /- InvalidTransaction Stale: .*do not sign again with a new nonce yet.*hash you wrote down/, text);
+    assert.doesNotMatch(r.text, /sign with the next one/, text);
+    assert.equal(bestOf(r.text), 'E12', text);
+    assert.match(r.text, /- After `Transaction is outdated`, or a bare 1010 from the Ethereum RPC for a nonce already used, do not sign again at once/, text);
+  }
+  assert.equal(connects, 0);
+});
+
 test('an unknown text says so and guesses nothing', async () => {
   const r = await explain('the frobnicator is out of sprockets');
   assert.equal(r.isError, false);

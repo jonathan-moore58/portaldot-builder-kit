@@ -275,7 +275,8 @@ export function decodeEthRaw(raw: Uint8Array): RawEthTx | null {
 // Measured by real sends of value transfers on the testnet, Nov 15, 2026 (blocks 477789 to 478132):
 // - the node takes a transaction when gas limit x BASE fee is at most what the sender can spend
 //   (eth_getBalance). The max fee, a legacy gas price, the priority fee and the value are not counted.
-//   2 percent below the balance was taken and 5 percent above it was refused; nearer was not tried.
+//   The nearest real sends: 1.7 percent below the balance was taken (block 477940) and 2.4 percent
+//   above it was refused; nearer was not tried.
 // - at the start of its block the chain withdraws gas limit x base fee, and the value must come from
 //   what is left. A value that does not fit does not stop the transaction: it is included, it fails
 //   (receipt status 0x0) and the fee is charged.
@@ -301,39 +302,72 @@ export interface Acceptance {
   spare: bigint;
   /** The largest value with which it still succeeds (balance - toBeTaken), or null when it is refused. */
   maxValue: bigint | null;
-  /** True when toBeTaken is between 2 percent below and 5 percent above the balance, nearer than we measured. */
+  /** gas limit x max fee when a max fee above the base fee is given, else toBeTaken: what the block takes before the value if the base fee rises up to the max fee. */
+  withRise: bigint;
+  /** The largest value that still fits if the base fee rises up to the max fee (balance - withRise, at least 0), or null when it is refused. */
+  safeValue: bigint | null;
+  /** What to send first so that the balance covers withRise + the value; 0 when it already does. */
+  safeFund: bigint;
+  /** The gas limit these figures were computed with. */
+  gasLimit: bigint;
+  /** True when toBeTaken is between 1.7 percent below and 2.4 percent above the balance, nearer than we measured. */
   nearLine: boolean;
 }
 
-/** The node's balance rule (see above) applied to one transaction. All amounts in wei. */
-export function acceptanceOf(p: { gasLimit: bigint; baseFee: bigint; value: bigint; balance: bigint }): Acceptance {
+/**
+ * The node's balance rule (see above) applied to one transaction. All amounts in wei. The max fee, when
+ * given, decides only the advice: the base fee can rise before the block, up to the max fee.
+ */
+export function acceptanceOf(p: { gasLimit: bigint; baseFee: bigint; value: bigint; balance: bigint; maxFee?: bigint }): Acceptance {
   const toBeTaken = p.gasLimit * p.baseFee;
   const toSucceed = toBeTaken + p.value;
-  const nearLine = toBeTaken * 100n > p.balance * 98n && toBeTaken * 100n < p.balance * 105n;
+  const nearLine = toBeTaken * 10000n > p.balance * 9832n && toBeTaken * 10000n < p.balance * 10236n;
   const shortToTake = toBeTaken > p.balance ? toBeTaken - p.balance : 0n;
   const shortToSucceed = toSucceed > p.balance ? toSucceed - p.balance : 0n;
   const outcome: Outcome = shortToTake > 0n ? 'refused' : shortToSucceed > 0n ? 'fails' : 'ok';
-  return { outcome, toBeTaken, toSucceed, shortToTake, shortToSucceed, spare: outcome === 'ok' ? p.balance - toSucceed : 0n, maxValue: outcome === 'refused' ? null : p.balance - toBeTaken, nearLine };
+  const withRise = p.maxFee !== undefined && p.maxFee > p.baseFee ? p.gasLimit * p.maxFee : toBeTaken;
+  const safeValue = outcome === 'refused' ? null : p.balance > withRise ? p.balance - withRise : 0n;
+  const safeFund = withRise + p.value > p.balance ? withRise + p.value - p.balance : 0n;
+  return { outcome, toBeTaken, toSucceed, shortToTake, shortToSucceed, spare: outcome === 'ok' ? p.balance - toSucceed : 0n, maxValue: outcome === 'refused' ? null : p.balance - toBeTaken, withRise, safeValue, safeFund, gasLimit: p.gasLimit, nearLine };
 }
 
 /** The verdict in one paragraph: the outcome, the numbers that decide it, and what to change. */
 export function verdictText(a: Acceptance, network: Network, fundTarget: string): string {
   const w = (v: bigint): string => weiAmount(v, network);
   const near = a.nearLine
-    ? ' Close to the line: gas limit x base fee is within 2 percent below to 5 percent above the balance. We measured the rule at 2 percent below (taken) and 5 percent above (refused), not nearer, so keep a margin.'
+    ? ' Close to the line: gas limit x base fee is within 1.7 percent below to 2.4 percent above the balance. Real sends of Nov 15, 2026 were taken at 1.7 percent below (testnet block 477940) and refused at 2.4 percent above, not nearer, so keep a margin.'
     : '';
-  if (a.outcome === 'ok') return `TAKEN, and it should succeed: the balance covers gas limit x base fee plus the value, with ${weiAmount(a.spare, network, false)} to spare.${near}`;
+  // With a max fee the advice leaves room for the base fee to rise before the block, up to the max fee.
+  const rise = a.withRise > a.toBeTaken;
+  if (a.outcome === 'ok') {
+    // A value that fits only at this base fee: a rise before the block makes the transaction fail and cost the fee.
+    const thin =
+      rise && a.toSucceed > a.toBeTaken && a.safeFund > 0n
+        ? ` But a rise of the base fee up to the max fee would take more than that: if the base fee rises by more than ${a.spare / a.gasLimit} wei per gas before the block, the value no longer fits, and the transaction fails and costs the fee. To keep that room, ${a.safeValue ? `lower the value to at most ${w(a.safeValue)}, or ` : ''}send at least ${weiAmount(a.safeFund, network, false)} more to ${fundTarget} first.`
+        : '';
+    return `TAKEN, and it should succeed: the balance covers gas limit x base fee plus the value, with ${weiAmount(a.spare, network, false)} to spare.${thin}${near}`;
+  }
   if (a.outcome === 'fails') {
+    const fund = `send at least ${weiAmount(a.safeFund, network, false)} more to ${fundTarget} first`;
     return (
       `TAKEN, but it will FAIL in its block and cost the fee: the balance covers gas limit x base fee but not the value on top of it, short by ${w(a.shortToSucceed)}. ` +
       'The node does not count the value before the block, so it takes the transaction; in the block the value cannot be paid, the receipt shows status 0x0, and the fee is charged all the same (measured on Nov 15, 2026 with real sends: testnet blocks 477900 and 477940). ' +
-      `Lower the value to at most ${w(a.maxValue ?? 0n)} at this base fee, or send at least ${weiAmount(a.shortToSucceed, network, false)} more to ${fundTarget} first.${near}`
+      (a.safeValue
+        ? `Lower the value to at most ${w(a.safeValue)}${rise ? ', the balance less gas limit x max fee, so that it still fits if the base fee rises up to the max fee before the block;' : ' at this base fee,'} or ${fund}.`
+        : `${fund[0].toUpperCase()}${fund.slice(1)}${rise ? ' (that leaves room for the base fee to rise up to the max fee before the block)' : ''}.`) +
+      near
     );
   }
   // eth_getBalance leaves out the existential deposit, so an account that holds nothing yet needs it on top.
   const empty = a.shortToTake === a.toBeTaken ? ` The balance is 0: if the account holds less than the 0.1 ${network.token} existential deposit (or does not exist yet), send that 0.1 ${network.token} on top.` : '';
+  const withValue = a.toSucceed > a.toBeTaken;
+  const covers = rise
+    ? ` (that covers ${withValue ? 'the value too, and ' : ''}a rise of the base fee up to the max fee before the block)`
+    : withValue
+      ? ' (that covers the value too)'
+      : '';
   return (
     `REFUSED with error 1010: expect {"code":1010,"message":"Invalid Transaction"}, which gives no reason (the node's own check calls it Payment), because gas limit x base fee is more than the balance, short by ${w(a.shortToTake)}. ` +
-    `Nothing is charged and the nonce stays free. Send at least ${weiAmount(a.shortToSucceed, network, false)} to ${fundTarget} first${a.toSucceed > a.toBeTaken ? ' (that covers the value too)' : ''}.${empty} A higher gas limit only raises what the sender must hold.${near}`
+    `Nothing is charged and the nonce stays free. Send at least ${weiAmount(a.safeFund, network, false)} to ${fundTarget} first${covers}.${empty} A higher gas limit only raises what the sender must hold.${near}`
   );
 }

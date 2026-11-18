@@ -22,12 +22,12 @@ test('no warning while the chain runs the saved spec', () => {
   assert.equal(specWarning(mainnet, { genesis: mainnet.genesis, specVersion: savedM }), null);
 });
 
-test('another spec: one warning that names both specs, says live reads are still right, and says to update the plugin', () => {
+test('another spec: one warning that names both specs, says live reads are still right, and says to update the kit', () => {
   const w = specWarning(testnet, { genesis: testnet.genesis, specVersion: savedT + 1 });
   assert.equal(
     w,
     `WARNING: the Portaldot V3 testnet now runs runtime spec ${savedT + 1}, and the facts in these tools that carry a date were measured on spec ${savedT}: after this runtime upgrade they may no longer hold. ` +
-      'What the tools read live is still right. Update the plugin: a newer version may have the facts checked on the new runtime.',
+      'What the tools read live is still right. Update the Portaldot Builder Kit to its newest version: it may have the facts checked on the new runtime.',
   );
   assert.match(specWarning(mainnet, { genesis: mainnet.genesis, specVersion: savedM - 1 }) ?? '', new RegExp(`^WARNING: the Portaldot V3 mainnet now runs runtime spec ${savedM - 1}, .* measured on spec ${savedM}:`));
   assert.match(w ?? '', /^[\x20-\x7e]+$/, 'ASCII only, one line');

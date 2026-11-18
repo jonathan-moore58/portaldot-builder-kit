@@ -42,8 +42,14 @@ type Loose = any;
 /** Events listed for one transaction. */
 const MAX_EVENTS = 40;
 const DEFAULT_SEARCH = 100;
-/** Most entries of the node's pool searched for one lookup, so a crowded pool cannot hold the server up. */
+/** Most entries of the node's pool searched for one lookup. */
 export const MAX_POOL = 5_000;
+/**
+ * Most hex characters of pool entries searched for one lookup, about 4 MB of extrinsics, so a crowded
+ * pool cannot hold the server up: hashing and decoding take time in proportion to the size, and one
+ * entry can be megabytes. An entry that does not fit in what is left is passed over, and counted.
+ */
+export const MAX_POOL_HEX = 8_000_000;
 
 interface EthTx {
   hash: string;
@@ -351,8 +357,9 @@ export interface PoolMatch {
 /**
  * The entry of the node's pool list (author_pendingExtrinsics) whose own hash, or whose Ethereum
  * transaction hash (keccak-256 of a Revive.ethTransact payload), is this hash. Null when none is.
+ * Entries are searched within budget hex characters in all; stats.skipped counts those passed over.
  */
-export function findInPool(registry: Loose, pool: string[], hash: string): PoolMatch | null {
+export function findInPool(registry: Loose, pool: string[], hash: string, stats: { skipped: number } = { skipped: 0 }, budget = MAX_POOL_HEX): PoolMatch | null {
   const h = hash.toLowerCase();
   const decode = (hex: string): Loose => {
     try {
@@ -361,7 +368,13 @@ export function findInPool(registry: Loose, pool: string[], hash: string): PoolM
       return null; // not decodable with this runtime
     }
   };
+  let left = budget;
   for (let i = 0; i < pool.length; i++) {
+    if (pool[i].length > left) {
+      stats.skipped++;
+      continue;
+    }
+    left -= pool[i].length;
     const own = blake2AsHex(pool[i], 256);
     if (own === h) return { kind: 'extrinsic', position: i, x: decode(pool[i]), extrinsicHash: own };
     // Only an extrinsic long enough to carry a signed Ethereum transaction is decoded (as scanForHash does).
@@ -377,6 +390,8 @@ interface PoolLook {
   size: number | null;
   why: string | null;
   match: PoolMatch | null;
+  /** Long entries passed over, to keep the lookup short: a transaction among them is not found. */
+  skipped: number;
 }
 
 /** One author_pendingExtrinsics request, searched for the hash. A failing node is reported, not thrown. */
@@ -385,11 +400,13 @@ async function lookInPool(conn: Conn, hash: string): Promise<PoolLook> {
   try {
     list = await conn.provider.send('author_pendingExtrinsics', []);
   } catch (err) {
-    return { size: null, why: messageText(err instanceof Error ? err.message : String(err), 200), match: null };
+    return { size: null, why: messageText(err instanceof Error ? err.message : String(err), 200), match: null, skipped: 0 };
   }
-  if (!Array.isArray(list)) return { size: null, why: 'its answer was not a list', match: null };
+  if (!Array.isArray(list)) return { size: null, why: 'its answer was not a list', match: null, skipped: 0 };
   const hexes = list.slice(0, MAX_POOL).filter((v): v is string => isEthHex(v) && v.length % 2 === 0);
-  return { size: list.length, why: null, match: findInPool((conn.api as Loose).registry, hexes, hash) };
+  const stats = { skipped: 0 };
+  const match = findInPool((conn.api as Loose).registry, hexes, hash, stats);
+  return { size: list.length, why: null, match, skipped: stats.skipped };
 }
 
 /** What a transaction found in the pool means, for both kinds. */
@@ -449,14 +466,18 @@ export function renderPool(m: PoolMatch, hash: string, network: Network, size: n
 }
 
 /** Why a hash can be in no block and not in the pool. Measured on the testnet on Nov 15, 2026, where it says so. */
-export function notFoundLines(network: Network, pool: { size: number | null; why: string | null }): string[] {
+export function notFoundLines(network: Network, pool: { size: number | null; why: string | null; skipped?: number }): string[] {
+  const skipped = pool.skipped ?? 0;
   return [
     pool.size === null
       ? `- the node's pool could not be read (${pool.why ?? 'no answer'}), so whether the transaction waits there is not known.`
-      : `- not in the node's pool of transactions waiting for a block (author_pendingExtrinsics, read just now, held ${pool.size}${pool.size > MAX_POOL ? `; the first ${MAX_POOL} were searched` : ''}).`,
+      : `- not in the node's pool of transactions waiting for a block (author_pendingExtrinsics, read just now, held ${pool.size}${pool.size > MAX_POOL ? `; the first ${MAX_POOL} were searched` : ''}${
+          skipped ? `; ${skipped === 1 ? '1 long entry was' : `${skipped} long entries were`} passed over, to keep the lookup within about 4 MB, so a transaction among them would not be found here` : ''
+        }).`,
     'That can mean:',
     '- it was never sent to this node, or it was sent to the other network;',
-    '- it was refused when it was sent: the sender got an error back, such as 1010, 1012, 1013 or 1014 (explain_error reads it). A refused transaction leaves no trace and does not use its nonce;',
+    '- it was refused when it was sent: the sender got an error back, such as 1002, 1010, 1011 or 1014, or -32000 "Invalid transaction" from the Ethereum RPC (explain_error reads it). A transaction refused that way leaves no trace and does not use its nonce;',
+    '- it is in an older block: an error 1012 (temporarily banned) or 1013 (already imported) does not show that it was refused. On Nov 15, 2026 both came back for the bytes of a transaction already in a block (testnet block 477849), and both also for refused bytes sent again. Before you sign again, compare the nonce it was signed with against the nonce get_account shows: if the account is past it, this transaction or another with that nonce is in a block, so do not send the payment again before you have found which one;',
     '- it was replaced by another transaction with the same nonce and a higher fee or tip, which went into a block instead;',
     "- it waits behind a nonce gap: a transaction signed with a nonce above the account's next one is taken, but the node holds it apart and does not list it until the missing nonce is sent (measured on Nov 15, 2026). get_account of the sender shows its nonce and whether anything of it waits.",
     'No node can look up a native extrinsic by its hash: an older one can only be found by reading blocks. Pass the block it is in ("block" with "hash" or "index"; block and index work on both networks), or raise search_blocks (at most 300).',

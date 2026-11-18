@@ -238,7 +238,8 @@ function nearest(g: Guide, topic: string): GuideSection[] {
 /** Turns a topic (an id, a file, a path, a short form or a title) into what it names. */
 export function findTopic(g: Guide, topic: string): Found {
   const ix = indexOf(g);
-  let t = topic.trim().replace(/^[`'"]+|[`'"]+$/g, '').trim().replace(/\\/g, '/').replace(/#/g, '/');
+  // Trailing punctuation or a trailing slash, as a topic written from prose may have ("E12.", "errors/"), is dropped.
+  let t = topic.trim().replace(/^[`'"]+|[`'"]+$/g, '').trim().replace(/\\/g, '/').replace(/#/g, '/').replace(/[\s/.:;,]+$/, '');
   // a path to a knowledge file: .../portaldot-v3/SKILL.md, plugins/.../references/errors.md, references/errors.md, errors.md
   const skillPath = /^(?:.*\/)?([a-z0-9-]+)\/skill\.md(\/.*)?$/i.exec(t);
   if (skillPath) t = `${skillPath[1]}${skillPath[2] ?? ''}`;

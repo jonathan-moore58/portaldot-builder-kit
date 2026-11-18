@@ -289,10 +289,10 @@ export default defineTool({
           priceLine,
         );
         if (bare !== null) {
-          const { gasLimit } = ethLimits(bare, reading.gasPrice, 0n);
+          const { gasLimit, maxFee } = ethLimits(bare, reading.gasPrice, 0n);
           tail.push(
             `  without the value the estimate is ${bare} gas, so a gas limit of ${gasLimit} (estimate + 10 percent). With that gas limit, the node's two checks (${RULE_BASIS}):`,
-            ...acceptanceLines(acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: valueWei, balance: reading.balance }), valueWei, network, fundTarget, balanceLine),
+            ...acceptanceLines(acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: valueWei, balance: reading.balance, maxFee }), valueWei, network, fundTarget, balanceLine),
           );
         } else {
           tail.push(
@@ -319,7 +319,7 @@ export default defineTool({
     const estimate = reading.estimate;
     const cost = estimate * reading.gasPrice;
     const { gasLimit, maxFee } = ethLimits(estimate, reading.gasPrice, valueWei);
-    const acceptance = acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: valueWei, balance: reading.balance });
+    const acceptance = acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: valueWei, balance: reading.balance, maxFee });
 
     const inline = (h: string | undefined): string => (h === undefined ? '0x' : h.length <= INLINE_HEX_MAX ? h : 'DATA');
     const dataInline = inline(hasData ? dataHex : undefined);

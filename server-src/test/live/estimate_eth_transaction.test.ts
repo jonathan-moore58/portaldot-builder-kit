@@ -156,10 +156,18 @@ test('a value that does not fit after gas limit x base fee: TAKEN, but it will F
   assert.equal(r.isError, false, r.text);
   assert.match(r.text, /verdict: +TAKEN, but it will FAIL in its block and cost the fee: the balance covers gas limit x base fee but not the value on top of it/);
   assert.match(r.text, /receipt shows status 0x0, and the fee is charged all the same \(measured on Nov 15, 2026 with real sends: testnet blocks 477900 and 477940\)/);
-  const maxValue = BigInt(/Lower the value to at most \S+ \S+ \((\d+) wei\) at this base fee/.exec(r.text)?.[1] ?? '-1');
-  if (/without the value the estimate is/.test(r.text)) return; // the estimate refused the value: checked by the test above
+  const safeValue = BigInt(/Lower the value to at most \S+ \S+ \((\d+) wei\), the balance less gas limit x max fee, so that it still fits if the base fee rises up to the max fee before the block; or send at least /.exec(r.text)?.[1] ?? '-1');
+  assert.ok(safeValue > 0n, 'the advice leaves room for the base fee to rise up to the max fee');
+  if (/without the value the estimate is/.test(r.text)) {
+    // the estimate refused the value, so the gas without it gives the verdict (the test above checks that path)
+    const limit = BigInt(/a gas limit of (\d+) \(estimate \+ 10 percent\)/.exec(r.text)?.[1] ?? '0');
+    const price = BigInt(/gas price now: +(\d+) wei per gas/.exec(r.text)?.[1] ?? '0');
+    const held = BigInt(/balance now: +\S+ \S+ \((\d+) wei\)/.exec(r.text)?.[1] ?? '-1');
+    assert.equal(safeValue, held - limit * (price + price / 8n), 'the largest value to advise = balance - gas limit x max fee (gas price + one eighth)');
+    return;
+  }
   const n = checkArithmetic(r.text, value);
-  assert.equal(maxValue, n.balance - n.toBeTaken, 'the largest value = balance - gas limit x base fee');
+  assert.equal(safeValue, n.balance - n.limit * n.maxFee, 'the largest value to advise = balance - gas limit x max fee, room for the base fee to rise');
   // the same transaction with that largest value succeeds by the same rule
   const ok = await run({ from: TREASURY_H160, to: UNUSED, value: '1000000000000000' });
   assert.match(ok.text, /verdict: +TAKEN, and it should succeed: /);
