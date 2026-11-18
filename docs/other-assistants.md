@@ -4,7 +4,7 @@ by the Bridge Zero team
 
 The kit's chain tools are an ordinary MCP server that runs on your computer and talks over stdio. Any coding assistant that can start such a server can use them. In Claude Code, install the plugin as the [README](../README.md#install) says; this page is for the other assistants.
 
-> **How we know what is on this page.** Each assistant's section rests on that assistant's official documentation, as we read it on Nov 15 and 16, 2026. We have not run these assistants ourselves. What we did run: Claude Code with the plugin, up to version 0.2.1; the server over stdio with our own test client; and, on Windows on Nov 16, 2026, starts of the server of version 0.2.1 through npx from a packed copy and from a local git copy of this repository, and from a global install. Where the documentation is unclear, or two official pages disagree, the section says so and gives the safer choice. If your assistant behaves differently, please [open an issue](https://github.com/jonathan-moore58/portaldot-builder-kit/issues).
+> **How we know what is on this page.** Each assistant's section rests on that assistant's official documentation, as we read it on Nov 15 and 16, 2026. We have not run these assistants ourselves. What we did run: Claude Code with the plugin, up to this version; the server over stdio with our own test client; on Windows on Nov 16, 2026, starts of the server of version 0.2.1 through npx from a packed copy and from a local git copy of this repository, and from a global install; and on Nov 18, 2026, a start of this version's server through npx from GitHub. Where the documentation is unclear, or two official pages disagree, the section says so and gives the safer choice. If your assistant behaves differently, please [open an issue](https://github.com/jonathan-moore58/portaldot-builder-kit/issues).
 
 ## Find your assistant
 
@@ -58,7 +58,7 @@ npx -y github:jonathan-moore58/portaldot-builder-kit
 
 To stay on one release, add its tag: `github:jonathan-moore58/portaldot-builder-kit#v0.3.0`. Without a tag, npx starts what the main branch holds at that moment.
 
-npm fetches the package again at every start, and that is slow. On Nov 16, 2026, on Windows, with a local git copy of this repository in place of GitHub, a start took 14 to 16 seconds once npm had the package in its cache, and 42 seconds the first time. From GitHub, the download comes on top. That is longer than some assistants wait for a server to start:
+npm fetches the package again at every start, and that is slow. On Nov 16, 2026, on Windows, with a local git copy of this repository in place of GitHub, a start took 14 to 16 seconds once npm had the package in its cache, and 42 seconds the first time. From GitHub, a first start of this version took 38 seconds on Nov 18, 2026. That is longer than some assistants wait for a server to start:
 
 | Assistant | Documented start-up limit | Raise it with |
 | --- | --- | --- |

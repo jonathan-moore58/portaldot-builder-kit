@@ -168,7 +168,7 @@ The built server is one file with no dependencies to install. Node.js 24 runs th
 
 Where the facts come from. On Nov 15, 2026 we sent 65 transactions on the testnet from our own test accounts (the node took 50 and refused 15), and recorded 524 dry runs and reads in six groups: what Ethereum tools put into a transaction, a token's ERC-20 address, locked balances and address rules, calls between contracts, signing with other libraries, and the public endpoints. Earlier measurements carry their own dates.
 
-How the kit itself is tested. Numbers from November 16, 2026, on Node.js 24 and Windows:
+How the kit itself is tested. Numbers from November 18, 2026, on Node.js 24 and Windows:
 
 - 244 unit tests, with no network.
 - 133 live tests, which read the testnet and the mainnet.
@@ -176,9 +176,9 @@ How the kit itself is tested. Numbers from November 16, 2026, on Node.js 24 and 
 - 16 smoke checks of the built server with no network, also run on Node.js 20.
 - A copy without `node_modules` builds to the same file, byte for byte, and `npm run check:bundle` fails when the committed server is not what the source builds.
 - The CI badge at the top shows the type check, the unit tests, the generated-file and bundle checks and the smoke test on Linux, macOS and Windows; the live tests and the end-to-end checks are run by hand.
-- 12 developer questions (01 to 12), each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web), on version 0.1.0. With the plugin 24 of 24 answers were right; without it 16 of 24. Questions 13 to 23, and a new prompt and grader for question 2 that follow the corrected 1010 rule, came with 0.3.0 and have not been run yet; question 2's result from 0.1.0 does not apply to its new form. The questions and their graders are in `plugins/portaldot-dev/evals/`. This runs all 23: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
+- 23 developer questions, each asked twice with the plugin and twice without it (Claude Opus; the run without the plugin could search the web), on this version, on Nov 18, 2026. With the plugin 46 of 46 answers were right; without it 22 of 46. The questions and their graders are in `plugins/portaldot-dev/evals/`. This runs all 23: `claude plugin eval plugins/portaldot-dev --runs 2 --allow-real-servers --allow-tools "mcp__plugin_portaldot-dev_chain__*" WebSearch WebFetch --model opus --judge-model opus`. It starts the real chain server, which reads the public testnet, and it uses your own Claude account.
 
-What was not checked: the other assistants themselves (their sections rest on their documentation), the start by `npx` of this version, from GitHub or elsewhere (we measured npx starts on Nov 16, 2026 with the server of version 0.2.1, from a local git copy and from a packed copy), and deploying by Ethereum transaction, with Hardhat, `forge create` or anything else (our deployments used native calls; our own Ethereum transactions were transfers, token calls, contract calls sent with `cast`, and native calls through the pallets address).
+What was not checked: the other assistants themselves (their sections rest on their documentation; the start they share was checked: on Nov 18, 2026 npx started this version's server from GitHub on Windows, in 38 seconds the first time, and it passed the smoke checks), and deploying by Ethereum transaction, with Hardhat, `forge create` or anything else (our deployments used native calls; our own Ethereum transactions were transfers, token calls, contract calls sent with `cast`, and native calls through the pallets address).
 
 Two limits to know:
 
@@ -189,7 +189,7 @@ Two limits to know:
 
 Version 0.3.0, November 2026. What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-Version 0.2.1 of the plugin was checked on Claude Code 2.1.325; much older versions reject the plugin's manifest. For other assistants see [docs/other-assistants.md](docs/other-assistants.md).
+This version of the plugin was checked on Claude Code 2.1.326: installed from GitHub, its server connects, and the 205 checks of the built server pass on the installed copy. Much older versions reject the plugin's manifest. For other assistants see [docs/other-assistants.md](docs/other-assistants.md).
 
 The chain changes, so every fact carries its date. If you find something that is wrong or out of date, please open an issue at https://github.com/jonathan-moore58/portaldot-builder-kit/issues.
 
