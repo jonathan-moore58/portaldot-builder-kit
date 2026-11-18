@@ -9,6 +9,7 @@ import { blake2AsHex, keccakAsHex } from '@polkadot/util-crypto';
 import tool from '../../src/tools/get_transaction.ts';
 import { runTool } from '../../src/lib/tool.ts';
 import { closeAll, getConn } from '../../src/lib/chain.ts';
+import { decodeEthRaw } from '../../src/lib/evm.ts';
 import { NETWORKS, PALLETS_ADDRESS, type NetworkKey } from '../../src/lib/networks.ts';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,6 +18,13 @@ type Loose = any;
 // Two public test transactions of Nov 13, 2026: Ethereum transactions to the pallets address.
 const REMARK = { hash: '0xd56478b42c6be657c123c44f2bebecf0eaae3c7e689c69b17deb2cfdee0cf1ac', block: 452626 };
 const TRANSFER = { hash: '0xfc56147732c9eb9b9095658623c0da101caba98d29ebc1c805209dda0cac9c0c', block: 452633 };
+// Three public test transactions of Nov 15, 2026 that were included and FAILED, each with its fee charged:
+// a native transfer through the pallets address that the sender could not pay (its receipt shows gasUsed 0
+// and effectiveGasPrice 0), a transfer whose value did not fit after gas limit x base fee, and a contract call
+// with a selector the contract does not have.
+const FAILED_PALLETS = { hash: '0x45cc8d26bda0c14d382ad1a8cbf5fcf851286e036d8172ad79dfcf67561db855', block: 477826 };
+const FAILED_VALUE = { hash: '0x29aa26ad3e8fa2262237dbca62dced9d8165497b64c47d0a08f11152d8297479', block: 477940 };
+const FAILED_CALL = { hash: '0xea726e2efcb3f4f98a43b943ab5c50b5aa52186ba7b20809e4c860d00f6235f2', block: 477827 };
 
 const run = (args: unknown) => runTool(tool, args);
 
@@ -60,7 +68,8 @@ test('an Ethereum hash to the pallets address: System.remarkWithEvent decoded, b
   assert.match(text, new RegExp(`block: +${REMARK.block}, extrinsic index 1 \\(Revive\\.ethTransact\\)`));
   assert.equal(await payloadHash(REMARK.block, 1), REMARK.hash);
   assert.match(text, /System\.remarkWithEvent\n +remark: "native call from a 0x account, test 1"/);
-  assert.match(text, /receipt shows gasUsed 0 and no logs by design/);
+  assert.match(text, /receipt shows gasUsed 0 and no logs by design, and effectiveGasPrice 0, also when the call fails and a fee is paid/);
+  assert.doesNotMatch(text, /what that means: +it FAILED/, 'a success is not called a failure');
   assert.match(text, /System\.Remarked \{ sender: 5\w+/);
   const receipt = await eth<{ gasUsed: string; status: string; logs: unknown[] }>('eth_getTransactionReceipt', [REMARK.hash]);
   assert.equal(receipt.status, '0x1');
@@ -162,7 +171,7 @@ test('hashes that are not transactions, and input that cannot work, are refused 
   const cases: Array<[unknown, RegExp]> = [
     [{ hash: blockHash, search_blocks: 3 }, new RegExp(`That is the hash of block ${REMARK.block}, not of a transaction`)],
     [{ hash: ethBlock.hash, search_blocks: 3 }, new RegExp(`That is the Ethereum-side hash of block ${REMARK.block}`)],
-    [{ hash: `0x${'11'.repeat(32)}`, search_blocks: 3 }, /No transaction with the hash .* newest 3 blocks[\s\S]*No node can look up a native extrinsic by its hash/],
+    [{ hash: `0x${'11'.repeat(32)}`, search_blocks: 3 }, /No transaction with the hash .* was found on the Portaldot V3 testnet\. Read just now:[\s\S]*newest 3 blocks[\s\S]*not in the node's pool[\s\S]*No node can look up a native extrinsic by its hash/],
     [{ hash: '0x8ddee436166f311ddeed36d714b08f512670d16e' }, /A 0x address \(40 hex characters\) is not a transaction; get_account/],
     [{ index: 1 }, /Give "hash"/],
     [{}, /Give "hash"/],
@@ -176,6 +185,87 @@ test('hashes that are not transactions, and input that cannot work, are refused 
     assert.equal(isError, true, `${JSON.stringify(args)} was not refused:\n${text}`);
     assert.match(text, re);
   }
+});
+
+/** The receipt and the block's base fee, read here, for a failed transaction. */
+async function failedReceipt(hash: string, block: number): Promise<{ status: string; gasUsed: bigint; price: bigint; baseFee: bigint }> {
+  const r = await eth<{ status: string; gasUsed: string; effectiveGasPrice: string; blockNumber: string }>('eth_getTransactionReceipt', [hash]);
+  assert.equal(Number(BigInt(r.blockNumber)), block);
+  const b = await eth<{ baseFeePerGas: string }>('eth_getBlockByNumber', [`0x${block.toString(16)}`, false]);
+  return { status: r.status, gasUsed: BigInt(r.gasUsed), price: BigInt(r.effectiveGasPrice), baseFee: BigInt(b.baseFeePerGas) };
+}
+
+test('a failed native call through the pallets address: FAILED, gasUsed 0 and effectiveGasPrice 0, and the fee paid all the same', async () => {
+  const { text, isError } = await run({ hash: FAILED_PALLETS.hash });
+  assert.equal(isError, false, text);
+  const receipt = await failedReceipt(FAILED_PALLETS.hash, FAILED_PALLETS.block);
+  assert.deepEqual([receipt.status, receipt.gasUsed, receipt.price], ['0x0', 0n, 0n]);
+  assert.match(text, /: REVERTED\./);
+  assert.match(text, /status: +reverted \(receipt status 0x0\)\n +what that means: +it FAILED in its block\. It is included and used its nonce, its effects were undone, and the fee was charged all the same/);
+  assert.match(text, /^ +gas used: +0$/m);
+  assert.match(text, /effective gas price: 0 wei per gas \(always 0 for a native call through the pallets address, also when a fee was paid/);
+  assert.match(text, /That does not mean it was free: the fee was paid on the node/);
+  assert.match(text, /Balances\.transferKeepAlive/);
+  assert.match(text, /Revive\.EthExtrinsicRevert: Token\.FundsUnavailable/);
+  const index = Number(get(text, /extrinsic index (\d+) \(Revive\.ethTransact\)/));
+  const fee = BigInt(get(text, /fee paid: +\S+ tPOT \((\d+) base units\)/));
+  assert.ok(fee > 0n);
+  assert.equal(fee, await feePaid('testnet', FAILED_PALLETS.block, index));
+});
+
+test('a transfer whose value did not fit after gas limit x base fee: included, FAILED, charged gas used x base fee, and the cause named', async () => {
+  const { text, isError } = await run({ hash: FAILED_VALUE.hash });
+  assert.equal(isError, false, text);
+  const receipt = await failedReceipt(FAILED_VALUE.hash, FAILED_VALUE.block);
+  assert.equal(receipt.status, '0x0');
+  assert.equal(receipt.price, receipt.baseFee, 'charged at the base fee');
+  assert.match(text, /what that means: +it FAILED in its block\..* The charge is gas used x the base fee\./);
+  assert.match(text, /Revive\.EthExtrinsicRevert: Revive\.TransferFailed/);
+  assert.match(text, /likely cause: +the value could not be paid on top of the gas\. The node takes a transaction when gas limit x base fee is covered and does not count the value/);
+  assert.equal(BigInt(get(text, /gas used: +(\d+)/)), receipt.gasUsed);
+  assert.match(text, /check: +cost on the receipt = fee \(no deposit was held\)/);
+});
+
+test('a contract call that reverted: FAILED with its fee, and no value cause is guessed', async () => {
+  const { text, isError } = await run({ hash: FAILED_CALL.hash });
+  assert.equal(isError, false, text);
+  const receipt = await failedReceipt(FAILED_CALL.hash, FAILED_CALL.block);
+  assert.equal(receipt.status, '0x0');
+  assert.equal(receipt.price, receipt.baseFee, 'charged at the base fee');
+  assert.match(text, /what that means: +it FAILED in its block/);
+  assert.match(text, /Revive\.EthExtrinsicRevert: Revive\.ContractReverted/);
+  assert.doesNotMatch(text, /likely cause: /);
+  assert.equal(BigInt(get(text, /effective gas price: (\d+) wei per gas/)), receipt.baseFee);
+});
+
+test('the signed bytes a waiting transaction carries are read right: the payload of a real one against eth_getTransactionByHash', async () => {
+  const conn = await getConn('testnet');
+  const hash = await node<string>('testnet', 'chain_getBlockHash', [FAILED_PALLETS.block]);
+  const raw = await node<{ block: { extrinsics: string[] } }>('testnet', 'chain_getBlock', [hash]);
+  const x = raw.block.extrinsics.map((e) => (conn.api as Loose).registry.createType('Extrinsic', e)).find((e: Loose) => keccakAsHex(e.method.args[0]?.toU8a?.(true) ?? new Uint8Array(0), 256) === FAILED_PALLETS.hash);
+  assert.ok(x, 'the Revive.ethTransact of the transaction');
+  const t = decodeEthRaw(x.method.args[0].toU8a(true));
+  const tx = await eth<{ type: string; chainId: string; nonce: string; gas: string; to: string; value: string; input: string; maxFeePerGas: string; maxPriorityFeePerGas: string }>('eth_getTransactionByHash', [FAILED_PALLETS.hash]);
+  assert.ok(t);
+  assert.equal(t.type, Number(BigInt(tx.type)));
+  assert.equal(t.chainId, BigInt(tx.chainId));
+  assert.equal(t.nonce, BigInt(tx.nonce));
+  assert.equal(t.gasLimit, BigInt(tx.gas));
+  assert.equal(t.to, tx.to.toLowerCase());
+  assert.equal(t.value, BigInt(tx.value));
+  assert.equal(t.data, tx.input);
+  assert.equal(t.maxFeePerGas, BigInt(tx.maxFeePerGas));
+  assert.equal(t.maxPriorityFeePerGas, BigInt(tx.maxPriorityFeePerGas));
+});
+
+test('a hash in no block is looked up in the node\'s pool, and the answer says what "not found" can mean', async () => {
+  const { text, isError } = await run({ hash: `0x${'22'.repeat(32)}`, search_blocks: 2 });
+  assert.equal(isError, true);
+  assert.match(text, /not in the node's pool of transactions waiting for a block \(author_pendingExtrinsics, read just now, held \d+/);
+  assert.match(text, /it was refused when it was sent/);
+  assert.match(text, /it was replaced by another transaction with the same nonce/);
+  assert.match(text, /it waits behind a nonce gap/);
+  assert.doesNotMatch(text, /\n\s+at /);
 });
 
 test('the block given as its Ethereum-side hash, with the transaction hash', async () => {

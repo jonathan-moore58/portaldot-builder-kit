@@ -2,14 +2,15 @@
 
 by the Bridge Zero team
 
-Checked facts and read-only chain tools for building on Portaldot V3, packaged as a plugin for Claude Code. It is an independent project. The Portaldot team did not make it and does not endorse it.
+Measured facts and read-only chain tools for building on Portaldot V3, packaged as a plugin for Claude Code. It is an independent project. The Portaldot team did not make it and does not endorse it.
 
-Portaldot V3 looks like Polkadot on one side and like Ethereum on the other, and it behaves like neither in a few places that cost money: every account has two address forms, amounts have 14 decimals on one side and 18 on the other, gas includes a storage deposit, and the node refuses a transaction when the gas limit asks for more than the balance. This plugin gives the assistant the measured facts and the tools to check the live chain, so it does not have to guess.
+Portaldot V3 looks like Polkadot on one side and like Ethereum on the other, and it behaves like neither in a few places that cost money: every account has two address forms, amounts have 14 decimals on one side and 18 on the other, gas includes a storage deposit, the node refuses a transaction when gas limit x base fee is more than the sender can spend, and a transaction that fails in its block still pays its fee. This plugin gives the assistant the measured facts and the tools to check the live chain, so it does not have to guess.
 
 ## What is inside
 
-- **Chain tools** (an MCP server named `chain`): fifteen read-only tools. They look up the exact call for a job and its arguments, convert addresses and amounts, read balances and storage, dry-run contract calls and deployments, show a transaction from both sides, and explain errors.
-- **A knowledge pack** (the skill `portaldot-v3`): rules that prevent the costly mistakes, proven recipes, and a list of errors and traps. Every fact says how it is known: checked on the chain, learned from experience, taken from the official guide, or only reported by others.
+- **Chain tools** (an MCP server named `chain`): sixteen read-only tools. They look up the exact call for a job and its arguments, convert addresses and amounts, read balances and storage, dry-run calls, contract calls and deployments, show a transaction from both sides (also one that still waits for its block), explain errors, and read the knowledge pack by section.
+- **A knowledge pack** (the skill `portaldot-v3`): rules that prevent the costly mistakes, proven recipes, a list of errors and traps, and a table of what native calls answer to common mistakes. Every fact says how it is known: checked on the chain, learned from experience, taken from the official guide, or only reported by others.
+- **A start guide** (the skill `portaldot-start`): from an idea to a first working result on the testnet, with the cost of every step before any code and a dry run before every send. Say what you want to build, or run `/portaldot-dev:portaldot-start`.
 
 ## What it never does
 
@@ -19,7 +20,7 @@ When a tool is used, the server connects to the public Portaldot endpoints, or t
 
 ## Install
 
-You need Claude Code, Node.js 20 or newer on your PATH (we ran it only on Node.js 24), and git.
+You need Claude Code, Node.js 20 or newer on your PATH, and git.
 
 ```
 claude plugin marketplace add jonathan-moore58/portaldot-builder-kit

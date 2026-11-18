@@ -14,7 +14,11 @@
   "get_transaction",
   "get_block",
   "get_contract_events",
-  "explain_error"
+  "explain_error",
+  "read_guide"
+ ],
+ "prompts": [
+  "start_project"
  ],
  "calls": [
   {
@@ -404,8 +408,15 @@
     "0x8DDEe436166f311ddeED36d714B08F512670d16e",
     "One nonce serves both sides",
     "reviveApi.balance, the node's own figure",
-    "eth_getBalance at block"
-   ]
+    "eth_getBalance at block",
+    "- waiting for a block (read just now): nothing of this account is waiting for a block (system_accountNextIndex 0 equals the nonce)",
+    "On this chain \"pending\" equals \"latest\" even while a transaction waits for its block"
+   ],
+   "excludes": [
+    "Nothing is pending",
+    "now runs runtime spec"
+   ],
+   "note": "waiting transactions come from system_accountNextIndex, not from the pending count; the Treasury never signs, so its nonce stays 0"
   },
   {
    "tool": "get_account",
@@ -427,11 +438,14 @@
    "includes": [
     "Portaldot V3 mainnet",
     " POT (",
-    "has no public Ethereum RPC"
+    "has no public Ethereum RPC",
+    "- waiting for a block (read just now): nothing of this account is waiting for a block"
    ],
    "excludes": [
-    "tPOT"
-   ]
+    "tPOT",
+    "now runs runtime spec"
+   ],
+   "note": "the waiting line works on the mainnet too: it is read from the node"
   },
   {
    "tool": "get_account",
@@ -648,8 +662,18 @@
     "chainId: 420420777, type: 'eip1559'",
     "cast mktx 0x6D6f646c70792F70616464720000000000000000",
     "--priority-gas-price 0",
-    "max priority fee per gas: 0"
-   ]
+    "max priority fee per gas: 0",
+    "What the node will do (its rule, measured by real sends of value transfers on the testnet on Nov 15, 2026)",
+    "to be taken:     gas limit x base fee =",
+    "The max fee, the priority fee and the value are not counted.",
+    "refused the same way:",
+    "nonce to use:    "
+   ],
+   "excludes": [
+    "balance needed to be accepted",
+    "ACCEPTED"
+   ],
+   "note": "the verdict follows the node's rule (gas limit x base fee), not the max fee"
   },
   {
    "tool": "estimate_eth_transaction",
@@ -1025,7 +1049,10 @@
     "error": "list"
    },
    "includes": [
-    "E33."
+    "E33.",
+    "E39. forge script",
+    "E55.",
+    "55 entries"
    ]
   },
   {
@@ -1067,8 +1094,12 @@
    },
    "includes": [
     "1014 Priority is too low",
-    "standard Substrate meaning, not measured by us on this chain",
-    "Best match in our list: E12"
+    "Best match in our list: E12",
+    "priorities of the waiting transaction and of the new one",
+    "measured on this chain on Nov 15, 2026"
+   ],
+   "excludes": [
+    "1014 Priority is too low: a transaction from the same account with the same nonce is already in the pool"
    ]
   },
   {
@@ -1360,6 +1391,441 @@
    },
    "includes": [
     "safe mode: "
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {},
+   "includes": [
+    "The Bridge Zero team's knowledge pack for Portaldot V3",
+    "\nerrors: ",
+    "  E12  Nonce trouble",
+    "\nrecipes-contracts: "
+   ],
+   "note": "the table of contents"
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "E12"
+   },
+   "includes": [
+    "errors/E12: E12. Nonce trouble",
+    "### E12. Nonce trouble",
+    "read_guide {\"topic\":\"errors/E13\"} reads the next section"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "recipe 4"
+   },
+   "includes": [
+    "recipes-contracts/4: 4. Call a native module from a 0x account",
+    "0x6d6f646c70792f70616464720000000000000000"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "errors",
+    "part": 2
+   },
+   "includes": [
+    "Part 2 of ",
+    "Next part: read_guide {\"topic\":\"errors\",\"part\":3}"
+   ],
+   "note": "a long file comes in parts"
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "query": "eth_getLogs missing events"
+   },
+   "includes": [
+    "1. errors/E6: E6.",
+    "The best match in full, errors/E6"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "query": "nonce",
+    "topic": "errors"
+   },
+   "includes": [
+    "in errors: ",
+    "1. errors/E12: "
+   ],
+   "note": "a search inside one file"
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "4"
+   },
+   "includes": [
+    "- recipes-contracts/4: ",
+    "- evm-checks/4: ",
+    "- open-questions/4: "
+   ],
+   "note": "a short form that names several sections lists them"
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "no such section anywhere"
+   },
+   "error": true,
+   "includes": [
+    "No section of the knowledge pack is called",
+    "The nearest ids:",
+    "read_guide {\"query\":"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "part": 2
+   },
+   "error": true,
+   "includes": [
+    "\"part\" needs a \"topic\""
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "topic": "errors",
+    "part": 40
+   },
+   "error": true,
+   "includes": [
+    "so \"part\" goes from 1 to"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "query": "the how"
+   },
+   "error": true,
+   "includes": [
+    "has no word to search for"
+   ]
+  },
+  {
+   "tool": "read_guide",
+   "args": {
+    "query": "legal winner thank year wave sausage worth useful legal winner thank yellow"
+   },
+   "error": true,
+   "includes": [
+    "secret recovery phrase"
+   ],
+   "note": "a secret phrase is refused in read_guide too"
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0x45cc8d26bda0c14d382ad1a8cbf5fcf851286e036d8172ad79dfcf67561db855"
+   },
+   "includes": [
+    "what that means:     it FAILED in its block. It is included and used its nonce",
+    "effective gas price: 0 wei per gas (always 0 for a native call through the pallets address, also when a fee was paid",
+    "That does not mean it was free: the fee was paid on the node",
+    "Revive.EthExtrinsicRevert: Token.FundsUnavailable"
+   ],
+   "note": "a failed native call through the pallets address (testnet block 477826): gasUsed 0 and effectiveGasPrice 0, fee paid"
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0x29aa26ad3e8fa2262237dbca62dced9d8165497b64c47d0a08f11152d8297479"
+   },
+   "includes": [
+    "Revive.EthExtrinsicRevert: Revive.TransferFailed",
+    "likely cause:        the value could not be paid on top of the gas",
+    "The charge is gas used x the base fee."
+   ],
+   "note": "a transfer whose value did not fit after gas limit x base fee (testnet block 477940): taken, failed, fee charged"
+  },
+  {
+   "tool": "get_transaction",
+   "args": {
+    "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "search_blocks": 2
+   },
+   "error": true,
+   "includes": [
+    "was found on the Portaldot V3 testnet. Read just now:",
+    "not in the node's pool of transactions waiting for a block (author_pendingExtrinsics, read just now, held",
+    "it was replaced by another transaction with the same nonce",
+    "it waits behind a nonce gap"
+   ],
+   "note": "a hash in no block is looked up in the node's pool, and the answer lists what not found can mean"
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "to": "0x1111111111111111111111111111111111111111",
+    "value": "1000000000000000"
+   },
+   "includes": [
+    "to succeed:      gas limit x base fee + the value =",
+    "verdict:         TAKEN, and it should succeed",
+    "charged:       gas used x base fee, also when the transaction fails in its block"
+   ],
+   "note": "the Treasury holds far more than 0.001 tPOT plus the gas, so this is the first of the three outcomes"
+  },
+  {
+   "tool": "estimate_eth_transaction",
+   "args": {
+    "from": "0x1111111111111111111111111111111111111111",
+    "to": "0x8ddee436166f311ddeed36d714b08f512670d16e",
+    "value": "1000000000000000000"
+   },
+   "includes": [
+    "The estimate failed: the balance does not cover the value.",
+    "the node itself does not count the value before the block",
+    "without the value the estimate is"
+   ],
+   "note": "eth_estimateGas refuses the value; the tool estimates the gas without it and applies the node's rule. Assumes 0x1111...1111 holds less than 1 tPOT, as the live test does"
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":1014,\"message\":\"Priority is too low: (4048 vs 4048)\",\"data\":\"The transaction has too low priority to replace another transaction already in the pool.\"}"
+   },
+   "includes": [
+    "Best match in our list: E12",
+    "Next: get_account"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "1010: Invalid Transaction: Transaction is outdated"
+   },
+   "includes": [
+    "InvalidTransaction Stale",
+    "do not sign again with a new nonce yet",
+    "- After `Transaction is outdated`",
+    "Best match in our list: E12",
+    "E1. Error 1010"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":1012,\"message\":\"Transaction is temporarily banned\"}"
+   },
+   "includes": [
+    "1012 Transaction is temporarily banned",
+    "Best match in our list: E12"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Effective gas price 1 lower than base fee 15140\"}"
+   },
+   "includes": [
+    "Best match in our list: E1\n"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"insufficient funds for gas * price + value (2208055164315450): address 0x8ddee436166f311ddeed36d714b08f512670d16e have 14720367762103006325 (supplied gas Some(1458424811304789))\"}"
+   },
+   "includes": [
+    "14.720367762103006325 tPOT",
+    "about 15140 wei per gas",
+    "22.0805516431545 tPOT",
+    "Best match in our list: E1\n"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Not enough gas supplied: Module(ModuleError { index: 80, error: [23, 0, 0, 0], message: Some(\\\"StorageDepositNotEnoughFunds\\\") })\"}"
+   },
+   "includes": [
+    "-32000 Not enough gas supplied",
+    "Revive.StorageDepositNotEnoughFunds (module 80, error 23)",
+    "Best match in our list: E27"
+   ],
+   "excludes": [
+    "Seen in our testnet dry runs"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"failed to run contract: Module(ModuleError { index: 39, error: [0, 0, 0, 0], message: Some(\\\"BalanceLow\\\") })\"}"
+   },
+   "includes": [
+    "Assets.BalanceLow (module 39, error 0)",
+    "at the ERC-20 address of an Assets token",
+    "Best match in our list: E40"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"failed to run contract: Token(CannotCreate)\"}"
+   },
+   "includes": [
+    "Token(CannotCreate)",
+    "ERC-20 address",
+    "Best match in our list: E40"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"failed to run contract: ConsumerRemaining\"}"
+   },
+   "includes": [
+    "DispatchError ConsumerRemaining",
+    "Best match in our list: E41"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":3,\"message\":\"execution reverted: revert: Permit expired\",\"data\":\"0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000e5065726d69742065787069726564000000000000000000000000000000000000\"}"
+   },
+   "includes": [
+    "the message \"Permit expired\"",
+    "Best match in our list: E41"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Failed to dispatch call: Token(Frozen)\"}"
+   },
+   "includes": [
+    "free - max(frozen - reserved, 0.1 tPOT)",
+    "Best match in our list: E47"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Failed to dispatch call: CannotLookup\"}"
+   },
+   "includes": [
+    "DispatchError CannotLookup",
+    "Best match in our list: E50"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32000,\"message\":\"Failed to dispatch call: Module(ModuleError { index: 51, error: [0, 0, 0, 0], message: Some(\\\"BadContext\\\") })\"}"
+   },
+   "includes": [
+    "TransactionStorage.BadContext (module 51, error 0)",
+    "Best match in our list: E53"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "createType(Result<ValidTransaction, TransactionValidityError>):: Unable to create Enum via index 12, in Call, Payment, Future, Stale, BadProof, AncientBirthBlock, ExhaustsResources, Custom, BadMandatory, MandatoryDispatch, BadSigner"
+   },
+   "includes": [
+    "InvalidTransaction UnknownOrigin",
+    "Best match in our list: E50"
+   ],
+   "excludes": [
+    "MetaTx.BadProof",
+    "MetaTx.AncientBirthBlock"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"Err\":{\"Invalid\":\"BadProof\"}}"
+   },
+   "includes": [
+    "InvalidTransaction BadProof",
+    "Best match in our list: E1\n"
+   ],
+   "excludes": [
+    "MetaTx.BadProof"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":4003,\"message\":\"Client error: Execution failed: Other: Exported method DryRunApi_dry_run_call is not found\"}"
+   },
+   "includes": [
+    "4003 Client error: Execution failed",
+    "Best match in our list: E51"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "HTTP 413; <html>\r\n<head><title>413 Request Entity Too Large</title></head>\r\n<body>\r\n<center><h1>413 Request Entity Too Large</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n"
+   },
+   "includes": [
+    "HTTP 413 Request Entity Too Large",
+    "Best match in our list: E52"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":-32800,\"message\":\"Maximum number of chainHead_follow has been reached\"}"
+   },
+   "includes": [
+    "-32800 Maximum number of chainHead_follow has been reached",
+    "Best match in our list: E52"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "{\"code\":8011,\"message\":\"Leaf was not found\",\"data\":\"LeafNotFound\"}"
+   },
+   "includes": [
+    "8011 Leaf was not found",
+    "Best match in our list: E52"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "validateTransaction threw: 4003: Client error: Execution failed: Execution aborted due to trap: wasm trap: wasm `unreachable` instruction executed"
+   },
+   "includes": [
+    "Best match in our list: E55"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "Estimated total gas used for script: 329147"
+   },
+   "includes": [
+    "Best match in our list: E39",
+    "estimate_eth_transaction"
+   ]
+  },
+  {
+   "tool": "explain_error",
+   "args": {
+    "error": "E55"
+   },
+   "includes": [
+    "E55. @polkadot/api's validateTransaction traps"
    ]
   }
  ]

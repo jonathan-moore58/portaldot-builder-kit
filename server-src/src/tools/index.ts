@@ -11,6 +11,7 @@ import getBlock from './get_block.ts';
 import getChainFacts from './get_chain_facts.ts';
 import getContractEvents from './get_contract_events.ts';
 import getTransaction from './get_transaction.ts';
+import readGuide from './read_guide.ts';
 import readStorage from './read_storage.ts';
 import searchChain from './search_chain.ts';
 import simulateContractCall from './simulate_contract_call.ts';
@@ -32,4 +33,5 @@ export const TOOLS: AnyTool[] = [
   getBlock,
   getContractEvents,
   explainError,
+  readGuide,
 ];

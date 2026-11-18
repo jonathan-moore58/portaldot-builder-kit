@@ -1,5 +1,5 @@
 import * as z from 'zod';
-import { codeKind, readReviveAccount, resolveHolder, type ContractInfo } from '../lib/accounts.ts';
+import { codeKind, readPoolNonce, readReviveAccount, resolveHolder, waitingCount, waitingText, type ContractInfo, type PoolNonce } from '../lib/accounts.ts';
 import { checksummed, fallbackIdOfH160, parseAddress, specialAddress, SS58_PREFIX, toSs58 } from '../lib/address.ts';
 import { ethRpc, getConn, hasEvmRpc, type Conn } from '../lib/chain.ts';
 import { EthRpcError } from '../lib/errors.ts';
@@ -136,9 +136,9 @@ export default defineTool({
   title: 'Portaldot V3: one account in full, both address forms',
   description:
     'Everything about one Portaldot V3 account in one call, read live: what it is (a native account, a 0x address of an Ethereum key, or a contract with its EVM or PolkaVM code), both address forms, ' +
-    'whether it exists, its nonce (one nonce for both sides), the native balance (free, reserved, frozen, in tokens and base units), the Ethereum-side balance in wei that MetaMask and eth_getBalance show, the dust, ' +
+    'whether it exists, its nonce (one nonce for both sides) and whether a transaction of it is waiting in the node\'s pool for a block (system_accountNextIndex; on this chain eth_getTransactionCount "pending" does not show that), the native balance (free, reserved, frozen, in tokens and base units), the Ethereum-side balance in wei that MetaMask and eth_getBalance show, the dust, ' +
     'what holds any reserved or frozen amount, and for a contract its code size, code hash and storage and code deposits. ' +
-    'Use it to check a balance or nonce before or after a transaction, to see why MetaMask shows less than the native wallet, or to inspect a contract. Works on both networks. It shows the native token only: an Assets token balance is read_storage {"item": "Assets.account", "keys": [<asset id>, "5..."]}, and an ERC-20 balance is simulate_contract_call with balanceOf. ' +
+    'Use it to check a balance or nonce before or after a transaction, to see whether an earlier transaction still waits before sending the next one, to see why MetaMask shows less than the native wallet, or to inspect a contract. Works on both networks. It shows the native token only: an Assets token balance is read_storage {"item": "Assets.account", "keys": [<asset id>, "5..."]}, and an ERC-20 balance is simulate_contract_call with balanceOf. ' +
     'Example: {"address": "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"}.',
   input: {
     address: z.string().min(1).describe('The address in any form: SS58 (starts with 5, for example "5EYCAe5ijiYfyeZ2JJCGq56LmPyNRAKzpG4QkoQkkQNB5e6Z"), a 0x address of 40 hex characters, or a 0x account id of 64 hex characters. Public addresses only, never a key or a secret phrase.'),
@@ -170,10 +170,13 @@ export default defineTool({
     const ethHolderId = holder.linked ? parseAddress(holder.linked).accountId : fallbackIdOfH160(parsed.h160);
     const ethElsewhere = !sameId(ethHolderId, holder.holderId);
 
-    const [acc, ethAcc, nodeWei] = await Promise.all([
+    // Waiting transactions are read live, not at the block above: the node's pool has no past. A
+    // contract sends no transactions, so it is not asked.
+    const [acc, ethAcc, nodeWei, pool] = await Promise.all([
       at.query.system.account(holder.holderId),
       ethElsewhere ? at.query.system.account(ethHolderId) : null,
       nodeBalance(api, parsed.h160, blockHash),
+      contract ? null : readPoolNonce(conn, holder.holderSs58).catch((): PoolNonce | null => null),
     ]);
     const b = readBalances(acc);
     const ethB = ethAcc ? readBalances(ethAcc) : b;
@@ -224,9 +227,16 @@ export default defineTool({
       if (latest.status === 'fulfilled' && pending.status === 'fulfilled') {
         const l = Number(BigInt(latest.value));
         const p = Number(BigInt(pending.value));
-        ethLines.push(
-          `- eth_getTransactionCount of ${h160}: latest ${l}, pending ${p}.${p > l ? ` ${p - l} transaction${p - l > 1 ? 's are' : ' is'} pending: sent, but not in a block yet.` : ' Nothing is pending.'}${l !== ethB.nonce ? ` (The native nonce read at block ${blockNumber} is ${ethB.nonce}; the two were read a moment apart.)` : ''}`,
-        );
+        // Measured on Nov 15, 2026: "pending" stayed equal to "latest" while a transaction waited for its block.
+        // A contract sends no transactions, so nothing of it can wait: no note.
+        const pendingNote = contract
+          ? ''
+          : p === l
+            ? ' On this chain "pending" equals "latest" even while a transaction waits for its block (measured on Nov 15, 2026), so this count cannot show waiting transactions: the "waiting for a block" line above can. Do not take the next nonce from "pending" while a transaction may be waiting.'
+            : p > l
+              ? ` "pending" is ${p - l} above "latest": this RPC now counts waiting transactions, which it did not on Nov 15, 2026.`
+              : ' "pending" is below "latest": the two were probably read at different blocks.';
+        ethLines.push(`- eth_getTransactionCount of ${h160}: latest ${l}, pending ${p}.${pendingNote}${l !== ethB.nonce ? ` (The native nonce read at block ${blockNumber} is ${ethB.nonce}; the two were read a moment apart.)` : ''}`);
       } else {
         ethLines.push('- eth_getTransactionCount: the Ethereum RPC did not answer just now.');
       }
@@ -310,6 +320,11 @@ export default defineTool({
         ? `- exists: yes (providers ${b.providers}, consumers ${b.consumers}, sufficients ${b.sufficients})`
         : `- exists: no. It holds no ${token}: it was never funded, or it was emptied and removed. Sending it at least the 0.1 ${token} existential deposit creates it.`,
       `- nonce: ${b.nonce}. One nonce serves both sides: native extrinsics and Ethereum transactions from this account take numbers from the same sequence.`,
+      contract
+        ? null
+        : pool === null
+          ? '- waiting for a block: the node did not answer system_accountNextIndex just now, so whether a transaction of this account is waiting is not known.'
+          : `- waiting for a block (read just now): ${waitingText(pool)}${pool.nonce !== b.nonce ? ` (The nonce is ${pool.nonce} now; block ${blockNumber} showed ${b.nonce}. The two were read a moment apart.)` : ''}`,
       `- free:     ${nativeAmount(b.free, network)}`,
       `- reserved: ${nativeAmount(b.reserved, network)}`,
       `- frozen:   ${nativeAmount(b.frozen, network)}`,
@@ -325,6 +340,7 @@ export default defineTool({
       ...ethLines,
       contract ? contractLines(contract, network, nativeForm, storageHold) : null,
       '',
+      pool && waitingCount(pool) > 0 && 'get_transaction with the hash of a waiting transaction finds it in the node\'s pool and shows what it carries.',
       contract
         ? `Next: simulate_contract_call runs one of its functions without sending; read_storage reads its records, for example {"item": "Revive.codeInfoOf", "keys": ["${contract.codeHash}"]}; convert_amount turns an amount into the unit an API takes.`
         : `Next: convert_amount turns these amounts into the unit an API takes (base units for native calls, wei for the Ethereum side); read_storage reads this account's other records, for example its tokens with {"item": "Assets.account", "keys": [<asset id>, "${nativeForm}"]}.`,

@@ -1,8 +1,9 @@
 import * as z from 'zod';
-import { readReviveAccount, resolveHolder, type Holder } from '../lib/accounts.ts';
+import { readPoolNonce, readReviveAccount, resolveHolder, waitingCount, waitingText, type Holder, type PoolNonce } from '../lib/accounts.ts';
 import { checksummed, fallbackIdOfH160, parseAddress, toSs58, type ParsedAddress } from '../lib/address.ts';
 import { buildCall, checkPlainInput, echoCall, ethLimits, PALLETS_ROUTE_BASIS, readEthSide, specialOriginNote, type BuiltCall, type CallContext, type EthReading } from '../lib/calls.ts';
 import { getConn } from '../lib/chain.ts';
+import { acceptanceOf, verdictText as ethVerdictText } from '../lib/evm.ts';
 import { formatUnits, lines, nativeAmount, weiAmount } from '../lib/format.ts';
 import { getIndex } from '../lib/meta.ts';
 import { callNames, dryRunCall, fromReading, innerCallNotes, replyText, verdictText, type CallDryRun } from '../lib/nativedryrun.ts';
@@ -57,7 +58,7 @@ function dryRunSection(ctx: CallContext, built: BuiltCall, run: RunResult, parse
     `  how: from ${from} to the pallets address, with these call bytes as data and value 0, through ${through}. ${ranAs}`,
     ...innerCallNotes(callNames(index, built.call)).map((n) => `  ${n}`),
     '  Checked on Nov 15, 2026 with 143 such dry runs in 18 modules on the testnet: each answered with a gas figure or with "Failed to dispatch call:" and the call\'s own error, ' +
-      'and from the 0x form of a linked account the call ran as that account. A dry run does not check the fee (the lines above do), and no sent transaction has confirmed these answers.',
+      'and from the 0x form of a linked account the call ran as that account. A dry run does not check the fee (the lines above do). Transactions we sent on Nov 15, 2026 confirmed a few of these answers (a transfer above the balance, Proxy.NotProxy, TransactionStorage.renew of nothing) and showed two that mislead (a valid TransactionStorage.store or renew answers BadContext in a dry run, and succeeded when sent; a Proxy.proxy whose proxy type does not cover the call is accepted in a dry run, and when sent it succeeded while the call inside failed with System.CallFiltered): read_guide {"topic": "native-call-errors"}. The others rest on dry runs alone.',
   ];
 }
 
@@ -148,17 +149,22 @@ async function senderLines(ctx: CallContext, built: BuiltCall, amounts: bigint, 
     text.push('  No gas figures: eth_estimateGas answered with the refusal shown in the dry run above.');
     return { text, ethKey, next: null };
   }
-  const { gasLimit, maxFee, needed } = ethLimits(reading.estimate, reading.gasPrice, 0n);
+  const { gasLimit, maxFee } = ethLimits(reading.estimate, reading.gasPrice, 0n);
+  // The node's rule, measured by real sends on Nov 15, 2026 (lib/evm.ts): gas limit x base fee against the balance.
+  const acceptance = acceptanceOf({ gasLimit, baseFee: reading.gasPrice, value: 0n, balance: reading.balance, maxFee });
+  const pool = await readPoolNonce(conn, holder.holderSs58).catch((): PoolNonce | null => null);
   text.push(
     `  gas estimate: ${reading.estimate}; gas price: ${reading.gasPrice} wei per gas`,
-    `  gas limit ${gasLimit} (estimate + 10 percent), max fee per gas ${maxFee} wei (gas price + one eighth), max priority fee 0`,
-    `  balance needed to be accepted: gas limit x max fee = ${weiAmount(needed, network)}. Expect the node to refuse the transaction with error 1010 when the balance is lower.`,
+    `  gas limit ${gasLimit} (estimate + 10 percent), max fee per gas ${maxFee} wei (gas price + one eighth; it is not charged), max priority fee 0`,
+    `  to be taken by the node: gas limit x base fee = ${weiAmount(acceptance.toBeTaken, network)}. The max fee is not counted (measured by real sends on Nov 15, 2026).`,
     `  balance now (eth_getBalance: free less the existential deposit, or less the frozen amount when that is larger, plus dust): ${weiAmount(reading.balance, network)}`,
-    reading.balance >= needed ? '  enough to be accepted: yes' : `  enough to be accepted: NO, short by ${weiAmount(needed - reading.balance, network)}. Send that much ${token} to ${holder.holderSs58} first.`,
-    reading.nonceLatest === reading.noncePending
-      ? `  nonce to use: ${reading.noncePending}`
-      : `  nonce: WARNING, latest ${reading.nonceLatest} but pending ${reading.noncePending}: a transaction from this account is still waiting. Wait for it, or use nonce ${reading.noncePending} to send after it.`,
-    "  The call's own native amounts are taken from the same balance when it runs.",
+    `  verdict: ${ethVerdictText(acceptance, network, holder.holderSs58)}`,
+    pool === null
+      ? `  nonce to use: ${reading.noncePending} (the node did not answer system_accountNextIndex just now, so a transaction that still waits may not be counted)`
+      : waitingCount(pool) === 0
+        ? `  nonce to use: ${pool.next}`
+        : `  nonce: WARNING, ${waitingText(pool)}`,
+    "  The call's own native amounts are taken from the same balance when it runs: if they do not fit, the transaction is taken, fails in its block and still costs the fee (testnet block 477826, Nov 15, 2026).",
   );
   const next = `Next: estimate_eth_transaction {"from": "${parsed.h160}", "to": "${PALLETS_ADDRESS}", "data": "${built.hex.length <= 200 ? built.hex : '<the call bytes above>'}"} gives the fields to copy for viem, ethers and cast.`;
   return { text, ethKey, next };

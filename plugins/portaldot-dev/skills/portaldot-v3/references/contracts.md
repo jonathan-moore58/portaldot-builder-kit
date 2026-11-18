@@ -26,6 +26,11 @@ Measured on Nov 14, 2026 with deployless `eth_call`s on the testnet and the node
   - A System precompile at `0x0000000000000000000000000000000000000900` answers `minimumBalance()`, `hashBlake256(bytes)` and `toAccountId(address)`.
   - Reported, not measured: there is no ed25519 and no staking precompile.
 - An `eth_call` with creation code and no `to` (a "deployless" call) works; it is the way to batch reads without Multicall3 (`evm-checks.md` section 10).
+- Payments and calls between contracts (Checked Nov 15, 2026, dry runs; `evm-checks.md` section 11 has the numbers):
+  - In `eth_call`, `transfer()` and `send()` give the payee 7,461,079 gas, not 2300, and a call that sends value with a gas cap gives it the cap + 7,461,079 (in the node's own dry run without a gas limit the payee got 3,730,540, and 2^64 - 1 for any cap of 2300 or more; a sent transaction was not measured). 7,461,079 gas is enough to emit an event or to overwrite a slot that already exists, but not to write a new slot (that needs gas worth about 3.84 tPOT, the slot deposit) or to make any external call (about 7.7 x 10^7 gas), so re-entry through `transfer()` and `send()` fails; with a cap of 10^12 it succeeded. A failing `transfer()` reverts with empty data; `send()` and a capped call return false (E48).
+  - Contract code can pay any amount, even 1 wei, to an address that has no account. The transaction's sender pays 0.1 tPOT for each account created this way: in gas on the Ethereum side, and in the storage deposit on the native path, where a `storageDepositLimit` without it fails the whole call with `Revive.StorageDepositLimitExhausted` (module 80, error 24; E54).
+  - Calls nest at most 26 frames deep, the top call included, for `CALL`, `DELEGATECALL`, `STATICCALL` and chains of `CREATE`. The call one level deeper fails silently, with empty data (E49).
+  - `selfdestruct` in a constructor is accepted, and the node's dry run holds the same 13.11 tPOT deposit as for a constructor that returns empty code. Not known: what a sent one removes or refunds, and what `selfdestruct` does to a contract deployed earlier.
 
 ## Build settings
 
@@ -45,10 +50,23 @@ via_ir = true             # the IR pipeline usually gives smaller code
 ## Tools
 
 - The testnet guide documents MetaMask, Remix and Hardhat for deploying and calling (Guide).
-- Our own deployments used native calls only (recipe 2e). Our own Ethereum transactions were contract calls sent with `cast` (recipe 2c) and native calls through the pallets address (recipe 4). We have not deployed by Ethereum transaction, and have not run Hardhat, `forge create` or `forge script` against V3, so treat the two entries below as the connection facts only (Checked Nov 14, 2026: the URL and chain id are the ones `get_chain_facts` reads live):
-  - Hardhat 3: `networks: { portaldotTestnet: { type: "http", url: "https://test-evm-rpc-v3.portaldot.dev", chainId: 420420777, accounts: [configVariable("PRIVATE_KEY")] } }`. Hardhat 2 takes the same entry without `type`, with `accounts: [process.env.PRIVATE_KEY]`.
+- Our own deployments used native calls only (recipe 2e); we have not deployed by Ethereum transaction, and have not run `forge create` against V3. Our own Ethereum transactions were contract calls sent with `cast` (recipe 2c), native calls through the pallets address (recipe 4), and, on Nov 15, 2026, transfers, a contract call and ERC-20 calls signed with ethers 6.
+- Connection entries (Checked Nov 14, 2026: the URL and chain id are the ones `get_chain_facts` reads live):
+  - Hardhat 3: `networks: { portaldotTestnet: { type: "http", url: "https://test-evm-rpc-v3.portaldot.dev", chainId: 420420777, accounts: [configVariable("PRIVATE_KEY")] } }`. Hardhat 2 takes the same entry without `type`, with `accounts: [process.env.PRIVATE_KEY]`; Hardhat 2 was not run.
   - Foundry: in `foundry.toml`, `[rpc_endpoints]` with `portaldot_testnet = "https://test-evm-rpc-v3.portaldot.dev"`, then `--rpc-url portaldot_testnet`.
-  - Both tools choose a gas limit and a max fee themselves, and some defaults pad them (a multiplier on the gas estimate, or a max fee of twice the base fee). On V3 a padded limit can trip error 1010 (E1). Set the gas limit and the max fee per gas yourself, from `estimate_eth_transaction`, with a priority fee of 0.
+- What each tool puts into a transaction on V3 when you set nothing yourself (Checked Nov 15, 2026: each tool built transactions against the testnet through a local proxy that passed on only reads, and nothing it built was sent; the base fee was 15140 to 15145 wei):
+
+| Tool | Gas limit | Max fee | Priority fee |
+|---|---|---|---|
+| ethers 6.17 | `eth_estimateGas`, unchanged | 2 x base fee | 0 |
+| viem 2.57 | `eth_estimateGas`, unchanged | 1.2 x base fee | 0 |
+| Hardhat 3.22 with hardhat-ethers 4.2.2 (the entry above) | `eth_estimateGas`, unchanged | floor(base fee x 81/64), about 1.27 x | 1 wei |
+| `cast mktx` 1.8.5 | `eth_estimateGas`, unchanged | 2 x base fee + 1 wei | 1 wei |
+| `forge script` 1.8.5 | its own EVM's gas x 1.3, never asked of the node: 29005 for a transfer, 67501 for an `approve`, 329147 for a 1000-byte deployment | 2 x base fee + 1 wei | 1 wei |
+
+- What that means here: the node takes an Ethereum transaction when its gas limit x base fee fits the sender's `eth_getBalance`. The max fee, a legacy gas price, the priority fee and the value are not part of that check, and only gas used x base fee is charged (Checked Nov 15, 2026 by transactions sent from our own test accounts, blocks 477814 to 478132; `amounts-and-fees.md`). So ethers, viem, Hardhat 3 and `cast` can keep their own fields: their larger max fees and the 1 wei priority fee cost nothing. A larger gas limit raises only what the sender must hold.
+- `forge script` limits are 10^8 to 10^10 times too small. A dry run of them answers `{"code":-32000,"message":"Invalid call: Payment"}`, and a transaction sent with its gas limit of 67501 got the bare `{"code":1010,"message":"Invalid Transaction"}` (E39). Build the transaction with `cast estimate` and `cast mktx --gas-limit` (recipe 2c) instead. Whether `forge script --gas-limit` or `--skip-simulation` avoids this was not measured.
+- A gas limit below what the transaction uses is refused with the same bare 1010 before the block, not mined as failed: half the estimate, and 1 percent below the gas used, were refused; 0.5 percent above the gas used was mined. `eth_estimateGas` was 4.8 percent above the gas a transfer used (block 477814), so the estimate alone was enough for it (Checked Nov 15, 2026, sent transactions).
 - Foundry is not in the guide. In our experience `forge build`, `cast call`, `cast code`, `cast logs`, `cast receipt`, `cast mktx` and `cast publish` all work against `https://test-evm-rpc-v3.portaldot.dev` with `--chain 420420777`.
 - Foundry reads the `.env` of the folder it runs in; run `cast` in a folder without one when you do not want its values (Experience).
 - Recipe 2 in `recipes-contracts.md` has the exact commands: 2a build, 2b read, 2c call by Ethereum transaction, 2d deploy by Ethereum transaction, 2e deploy on the native path.
@@ -60,6 +78,8 @@ via_ir = true             # the IR pipeline usually gives smaller code
 | Build for V3 with Foundry, solc 0.8.27, `cancun` | proven (Experience) |
 | Read: `eth_call`, `eth_getCode`, `eth_getStorageAt`, `eth_getLogs`, receipts | proven (Experience; Checked Nov 14, 2026) |
 | Call a contract with value by Ethereum transaction (`cast mktx`, then `cast publish`) | proven by six contract calls sent as Ethereum transactions between Oct 19 and Nov 1, 2026 |
+| Send Ethereum transactions signed with ethers 6, type 2 and legacy | proven on Nov 15, 2026: transfers and a contract call, blocks 477814 to 478132 |
+| `approve`, `transferFrom`, `permit` and `transfer` on the ERC-20 address of an Assets token | proven on Nov 15, 2026 on pUSD, blocks 478195 to 478206 (section "Tokens of the Assets module" below) |
 | Deploy on the native path, `revive.instantiateWithCode` from an sr25519 account | proven on Oct 19, 2026: 899 bytes, deposit 83.232 tPOT, fee 0.1285 tPOT |
 | Call a contract from a native account, `revive.call` | proven on Oct 27, 2026: fee 0.0253 tPOT, deposit 3.8415 tPOT |
 | Run a contract call inside `multisig.asMulti` | proven in Oct 2026 |
@@ -135,25 +155,29 @@ Events and `eth_getLogs` (Checked Nov 14, 2026):
 
 Names, indices (module 80) and texts from the metadata, Checked Nov 14, 2026. "Seen" means a dry run or a transaction on the chain returned it. `errors.md` has the traps, by entry number.
 
-- `OutOfGas` (3): "The executed contract exhausted its gas limit." Seen with a weight limit below the dry run's, and in a deployless `eth_call` too heavy for one extrinsic (E10, E32).
-- `TransferFailed` (4): "Performing the requested transfer failed. Probably because there isn't enough free balance in the sender's account." Seen with a value larger than the balance (E10).
-- `StorageDepositNotEnoughFunds` (23): "Origin doesn't have enough balance to pay the required storage deposits." Seen in dry runs from an account with no balance (E7, E18).
-- `StorageDepositLimitExhausted` (24): "More storage was created than allowed by the storage deposit limit." Seen with a limit below the deposit; set the limit from `maxStorageDeposit` (E7).
+- `OutOfGas` (3): "The executed contract exhausted its gas limit." Seen with a weight limit below the dry run's, in a deployless `eth_call` too heavy for one extrinsic (E10, E32), and in `eth_call`s whose gas field was 50 or 97 percent of the estimate (Nov 15, 2026).
+- `TransferFailed` (4): "Performing the requested transfer failed. Probably because there isn't enough free balance in the sender's account." Seen with a value larger than the balance, and with a value 1 base unit above what a locked, held or reserved account can spend (E10, E47).
+- `MaxCallDepthReached` (5): never seen by name. A call 26 frames deep that calls once more gets a failed call with empty data instead (E49).
+- `StorageDepositNotEnoughFunds` (23): "Origin doesn't have enough balance to pay the required storage deposits." Seen in dry runs from an account with no balance (E7, E18). On Nov 15, 2026, `eth_call`s of one deployment with gas fields far too small (10^13 and 10^15) answered `{"code":-32000,"message":"Not enough gas supplied: Module(ModuleError { index: 80, error: [23, 0, 0, 0], message: Some(\"StorageDepositNotEnoughFunds\") })"}` from a sender that held 156,000 tPOT: there the cause is the gas field, not the balance. Which text a gas field that is too small gets depends on the contract (`OutOfGas` above, `ContractTrapped` below).
+- `StorageDepositLimitExhausted` (24): "More storage was created than allowed by the storage deposit limit." Seen with a limit below the deposit, also when the limit leaves out the 0.1 tPOT of each account that the contract's code creates by paying it; set the limit from `maxStorageDeposit` (E7).
 - `ContractReverted` (26): returned only from extrinsics; dry runs and the Ethereum RPC report a revert through the flags or `execution reverted` (E9, E26).
-- `ContractTrapped` (11): "Contract trapped during execution." Seen in the reverted creation transactions of blocks 343008 to 343010.
+- `ContractTrapped` (11): "Contract trapped during execution." Seen in the reverted creation transactions of blocks 343008 to 343010, and in an `eth_call` with a gas field of 10^13 for a constructor that writes one slot (Nov 15, 2026).
 - `InvalidInstruction` (31): "The program contains an invalid instruction." Seen for the blob opcodes, `INVALID` and unassigned opcodes (E31; `evm-checks.md` section 1).
 - `UnsupportedPrecompileAddress` (47): "Unsupported precompile address." Seen for a call to `0x0a` (E31; `evm-checks.md` section 2).
 - `TxFeeOverdraw` (53): the gas limit of an Ethereum transaction was too low for the deposit it needed (the chain's text is in `amounts-and-fees.md`). Not seen.
 - `CodeRejected` (27), `BlobTooLarge` (28), `CallDataTooLarge` (48), `DuplicateContract` (18), `EvmConstructorNonEmptyData` (54): not seen.
 - `AccountUnmapped` (43), `AutoMappingEnabled` (66): about account links. With autoMap on, whether `AccountUnmapped` can still fire is not known (E8).
 - `BalanceConversionFailed` (40, "Failed to convert a U256 to a Balance", E3), `StorageRefundNotEnoughFunds` (56), `StorageRefundLocked` (57), `PendingDepositCleanup` (67): not seen.
-- From the Ethereum RPC: `execution reverted` with code 3 (E26); `Invalid call: Payment` for a small `gas` field (E27); `Failed to dispatch call: ...` for a native call through the pallets address (E29); `The transaction consumes more than the allowed weight` for a call too heavy for one extrinsic (E32); `Failed to filter logs` (E33); `unknown variant newHeads` from `eth_subscribe` (E30); `insufficient funds for gas * price + value`, and error 1010 when sending (E1). The ERC-20 address of an asset with no metadata reverts `name()` with `execution reverted: revert: Metadata not found` (`evm-checks.md` section 3).
+- From the Ethereum RPC: `execution reverted` with code 3 (E26); `Invalid call: Payment` for a small `gas` field (E27); `Failed to dispatch call: ...` for a native call through the pallets address (E29); `The transaction consumes more than the allowed weight` for a call too heavy for one extrinsic (E32); `Failed to filter logs` (E33); `unknown variant newHeads` from `eth_subscribe` (E30); `insufficient funds for gas * price + value`, and error 1010 when sending (E1); `Effective gas price 1 lower than base fee 15140` for a max fee or legacy gas price of 1 wei, below the base fee, and `Not enough gas supplied: Off by: 212144843580` for a gas field a little below the need (Nov 15, 2026). The ERC-20 address of an asset with no metadata reverts `name()` with `execution reverted: revert: Metadata not found`, and a failed write there answers `failed to run contract:` with an Assets (39) or Balances (6) module error, a `Token(...)` text or `ConsumerRemaining` (`evm-checks.md` section 3, E40, E41).
 
 ## Limits of eth_call and estimates
 
-- `eth_call` takes a state override as its third parameter (`code`, `balance` and `stateDiff` were applied); `eth_estimateGas` ignores one; `eth_simulateV1` answers "Method not found" (Checked Nov 14, 2026; E21).
+- `eth_call` takes a state override as its third parameter (`code`, `balance` and `stateDiff` were applied); `eth_estimateGas` ignores one; `eth_simulateV1` answers "Method not found" (Checked Nov 14, 2026; E21). Two limits of overrides (Checked Nov 15, 2026):
+  - An address given only `code` has no account. The first payment to it costs 0.1 tPOT, as for a new account, and fails under any gas cap; later payments behave as for a deployed contract. Create test contracts inside a deployless call (`new C()`) instead.
+  - A `balance` override creates the account, even with a balance of 0, so an override cannot show how much tPOT a new account needs.
 - For a "what if" estimate against state you supply, our tools used the runtime call `reviveApi.ethTransactWithConfig` with a state override (Experience).
-- An estimate does not check that the sender can pay the fee (`amounts-and-fees.md`).
+- An estimate does not check that the sender can pay the fee (`amounts-and-fees.md`). An `eth_call` without a gas field does not check that the sender can pay a storage deposit either: a deployment holding 112.95 tPOT of deposit ran from an origin holding 5.2 tPOT (Checked Nov 15, 2026).
+- Gas readings differ between the two kinds of dry run: `gasleft()` falls during an `eth_call`, but reads 2^64 - 1 throughout the node's dry run without a gas limit (`evm-checks.md` section 11). Measure gas-dependent code with `eth_call`.
 - `eth_call` and `eth_getBalance` answered at block 1 on Nov 14, 2026; in October 2026 the RPC refused state older than about 256 blocks (`open-questions.md` item 1). Test the depth at run time before you depend on it.
 
 ## Contract storage
@@ -173,8 +197,14 @@ Names, indices (module 80) and texts from the metadata, Checked Nov 14, 2026. "S
 
 - Every asset of the Assets module has an ERC-20 address: the asset id as 4 big-endian bytes, then 12 zero bytes, then `0x0001`, then `0x0000`. Asset 2 is `0x0000000200000000000000000000000000010000` (Checked Nov 14, 2026: `totalSupply()` there returned 15000000000000000000, the module's `assets.asset(2).supply`).
 - The PoolAssets module (the liquidity tokens of AssetConversion) uses the same layout with `0x0002`: pool asset 0 is `0x0000000000000000000000000000000000020000` (Checked Nov 14, 2026).
-- `name()`, `symbol()`, `decimals()`, `totalSupply()` and `balanceOf(holder)` matched the module's storage. An id with no asset still answers `totalSupply()` with 0 and no error, so check that the asset exists before you trust a zero. `convert_address` recognises these addresses. `evm-checks.md` section 3 has the details, including permit nonces.
-- Not measured: `transfer`, `approve`, `transferFrom`, `allowance` and a permit through these addresses.
+- `name()`, `symbol()`, `decimals()`, `totalSupply()`, `balanceOf(holder)` and `allowance()` matched the module's storage (Checked Nov 14, 2026; `allowance()` on Nov 15, 2026). `decimals()` is the asset's own: 6 for pUSD (asset 7777), so never assume 18. An id with no asset still answers `totalSupply()`, `balanceOf()` and `allowance()` with 0 and no error, and a transfer there fails with `Assets.Unknown`, so check that the asset exists before you trust a zero. `convert_address` recognises these addresses.
+- Writes work: we sent `approve`, `transferFrom`, `permit` and `transfer` on pUSD on Nov 15, 2026 (blocks 478195 to 478206). What differs from an OpenZeppelin token (`evm-checks.md` section 3 has the texts and numbers):
+  - A failure is not revert data. Tools get code -32000 with a module error, and a calling contract gets a failed call with empty data, so `SafeERC20` reverts with no reason (E40).
+  - Every approval, and a permit, holds 0.1 tPOT from the owner while it exists, outside gas (E41).
+  - An approval of 2^128 or more, `type(uint256).max` included, is stored as 2^128 - 1 and goes down with each `transferFrom` (E43).
+  - A transfer that would leave the sender below the asset's minimum balance moves the whole balance, while the `Transfer` log shows the amount asked (E42).
+  - tPOT sent along with a token call stays on the token address (E44).
+  - The EIP-712 domain of `permit` is the asset's metadata name, version "1", chain id 420420777 and the token address; `eip712Domain()` is not served.
 - The modules `AssetsPrecompiles` (index 91) and `AssetsPrecompilesPermit` (index 92) exist. `AssetsPrecompiles` maps 52 asset indexes (`nextAssetIndex` is 52) to the 52 asset ids of the testnet, but no address found uses those indexes; what reads them is not known (Checked Nov 14, 2026).
 - Upstream polkadot-sdk has no ERC-721 precompile for the Nfts or Uniques modules (Experience, from the upstream source on Oct 15, 2026).
 

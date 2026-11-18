@@ -1,0 +1,35 @@
+{
+  "name": "portaldot-builder-kit",
+  "version": "0.3.0",
+  "description": "Read-only chain tools for building on Portaldot V3, as an MCP server on stdio. By the Bridge Zero team; an independent tool, not an official Portaldot one.",
+  "license": "Apache-2.0",
+  "author": "Bridge Zero team",
+  "homepage": "https://github.com/jonathan-moore58/portaldot-builder-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonathan-moore58/portaldot-builder-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jonathan-moore58/portaldot-builder-kit/issues"
+  },
+  "keywords": [
+    "portaldot",
+    "substrate",
+    "pallet-revive",
+    "solidity",
+    "mcp",
+    "mcp-server"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "portaldot-builder-kit": "plugins/portaldot-dev/server/index.mjs"
+  },
+  "files": [
+    "plugins/portaldot-dev/server/",
+    "LICENSE",
+    "README.md"
+  ]
+}

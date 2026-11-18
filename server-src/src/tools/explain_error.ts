@@ -13,7 +13,7 @@ import { checksummed } from '../lib/address.ts';
 import { getConn } from '../lib/chain.ts';
 import { ToolError } from '../lib/errors.ts';
 import { CUSTOM_BY_SELECTOR, decodeRevert, readCustomArgs } from '../lib/evm.ts';
-import { lines } from '../lib/format.ts';
+import { lines, nativeAmount, weiAmount } from '../lib/format.ts';
 import { getIndex, normName } from '../lib/meta.ts';
 import { measuredFor } from '../lib/mistakes.ts';
 import { pickNetwork, type Network, type NetworkKey } from '../lib/networks.ts';
@@ -66,9 +66,12 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [POOL_INVALID, 8],
     [/transaction call is not expected/, 7],
     [/refused: invalid (?:payment|call)\b|\{\s*"err"\s*:\s*\{\s*"invalid"\s*:/, 8],
-    [/transaction has a bad signature|\bbad ?proof\b/, 9],
-    [/ancient birth ?block|ancientbirthblock/, 9],
+    // MetaTx.BadProof and MetaTx.AncientBirthBlock are errors of meta transactions, not a refused transaction's reasons
+    [/transaction has a bad signature|(?<!metatx\.)\bbad ?proof\b/, 9],
+    [/ancient birth ?block|(?<!metatx\.)ancientbirthblock/, 9],
     [/insufficient funds for gas/, 8],
+    // a max fee or a legacy gas price below the base fee, as eth_call and eth_estimateGas word it
+    [/effective gas price \d+ lower than base fee/, 10],
     [either(/temporarily banned/, code(1012)), 7],
     [/account balance too low/, 6],
   ],
@@ -91,6 +94,8 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/dispatchasfallbackaccount/, 9],
     [/fallback (?:account|address)|e{24}/, 6],
     [/originalaccount/, 5],
+    // the library helpers whose rules are not the chain's
+    [/addresstoevm|evmtoaddress/, 7],
     [/(?:wrong|other) (?:form of (?:the |an )?)?address|wrong address form/, 6],
     [/h160.{0,60}(?:not the same|different|differs)/, 6],
     [/(?:funds?|tpot|tokens?|balance).{0,40}(?:never (?:arrived|showed?)|not (?:arrived|showing|received)|missing|disappeared|vanished)/, 5],
@@ -143,15 +148,19 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
   E11: [
     [/unknown signed extensions?|treating them as no-effect/, 10],
     [/authorizecall|ethsetorigin/, 9],
+    [/rpc methods not decorated/, 9],
     [/unable to (?:decode|create)|createtype\(|decod(?:e|ing) (?:error|failed)/, 5],
     [/signedextensions/, 5],
   ],
   E12: [
     [either(/priority is too low/, code(1014)), 10],
     [either(/(?:transaction )?already imported/, code(1013)), 10],
+    // 8, above E1's 7: what the reader needs after a 1012 is whether the transaction was included (this entry's fix)
+    [either(/temporarily banned/, code(1012)), 8],
     [/nounsignedvalidator/, 8],
     [either(/unknown transaction validity/, code(1011)), 4],
-    [/transaction is outdated|\boutdated\b/, 9],
+    // 10, so that "1010: Invalid Transaction: Transaction is outdated" (a used nonce) comes here before E1
+    [/transaction is outdated|\boutdated\b/, 10],
     [/nonce too (?:low|high)|invalid nonce|nonce (?:mismatch|is wrong|already used)/, 9],
     [/will be valid in the future|not accepting future transactions/, 8],
     [/replacement transaction underpriced|\balready known\b/, 7],
@@ -182,7 +191,8 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/maxweighttoolow/, 10],
     [/signatoriesoutoforder/, 10],
     [/alreadyapproved|noapprovalsneeded|toofewsignatories|toomanysignatories|senderinsignatories|unexpectedtimepoint|wrongtimepoint|notimepoint|minimumthreshold/, 8],
-    [/multisig|approveasmulti|asmulti/, 7],
+    // not inside another word: PAPI's "VerifyMultiSignature" is E50's
+    [/(?<![a-z])multisig|approveasmulti|asmulti/, 7],
     [/call ?hash.{0,40}(?:differ|mismatch|wrong)/, 5],
   ],
   E17: [
@@ -242,7 +252,8 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/nopermission|no permission to do the operation/, 4],
   ],
   E26: [
-    [/execution reverted/, 10],
+    // the revert texts that only another entry explains (E3, E41) are left to it: these are the token address's own checks
+    [/execution reverted(?!: revert: (?:permit expired|signer does not match owner|invalid signature v value|balance conversion failed)\b)/, 10],
     [/callexception|call_exception|contractfunctionrevertederror|contractfunctionexecutionerror|transaction reverted|call reverted/, 8],
     [/0x08c379a0|0x4e487b71/, 8],
     [/"code"\s*:\s*3\b|\(code 3\)/, 6],
@@ -252,6 +263,11 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
   ],
   E27: [
     [/invalid call:? payment/, 10],
+    // "Not enough gas supplied: Off by: N" and "Not enough gas supplied: Module(... StorageDepositNotEnoughFunds ...)":
+    // two patterns, so that the second form comes here before E7, whose error name it carries
+    [/not enough gas supplied/, 10],
+    [/not enough gas supplied\W{0,4}(?:off by|module\()/, 10],
+    [/failed to run contract.{0,120}contracttrapped/, 7],
     [/intrinsic gas too low|gas required exceeds allowance|gas limit (?:is )?too low/, 7],
     [/\bgas\b\W{0,8}(?:21000|0x5208)\b/, 5],
     [/\bout of gas\b/, 4],
@@ -324,6 +340,110 @@ export const ENTRY_PATTERNS: Record<string, Pat[]> = {
     [/origin filter prevent|index: 0, error: \[5, 0, 0, 0\]/, 9],
     [/(?:\b|_)safe[ _-]?mode\b|(?:\b|_)tx[ _-]?pause\b|\bpaused calls?\b/, 6],
   ],
+  E39: [
+    [/estimated total gas used for script|estimated amount required/, 9],
+    [/failed to send transaction after \d+ attempts/, 8],
+    [/\bforge script\b/, 7],
+    // forge named beside the bare 1010: this entry before E1, which explains the rule in general
+    [/\bforge\b[\s\S]{0,200}(?:\b1010\b|invalid transaction)|(?:\b1010\b|invalid transaction)[\s\S]{0,200}\bforge\b/, 10],
+  ],
+  E40: [
+    // the token address's refusals: "failed to run contract:" with an Assets (39) error or a Token(...) variant
+    [/failed to run contract\W{0,4}(?:module\(moduleerror \{ index: 39\b|token\W{0,4}(?:cannotcreate|belowminimum|fundsunavailable|frozen|unknownasset|notexpendable|blocked)\b)/, 10],
+    // a token address alone is related, not the answer: explain_error says first that it is an address
+    [/\b0x[0-9a-f]{8}0{24}000[12]0000\b|erc-?20 address of an assets|assets? tokens?.{0,40}erc-?20 address/, 5],
+    [/\b(?:balancelow|assetnotlive|unapproved)\b/, 6],
+    [/memory allocation error \(0x41\)|balance conversion failed/, 6],
+  ],
+  E41: [
+    [/failed to run contract\W{0,4}consumerremaining/, 10],
+    [/failed to run contract\W{0,4}module\(moduleerror \{ index: 6, error: \[2\b/, 10],
+    [/revert: (?:permit expired|signer does not match owner|invalid signature v value)\b/, 10],
+    [/approvaldeposit|approval deposit|eip712domain|domain_separator|\bpermit\b.{0,60}(?:domain|eip-?712|deposit)/, 6],
+  ],
+  E42: [
+    [/assets\.transferred[\s\S]{0,160}\btransfer\b (?:log|event)|\btransfer\b (?:log|event)[\s\S]{0,160}assets\.transferred/, 8],
+    [/(?:receiver|recipient) got more than|(?:whole|entire) balance.{0,40}(?:mov|went|sent|transferr|gone)|(?:mov|sent|transferr)\w*.{0,20}(?:whole|entire) balance/, 7],
+  ],
+  E43: [
+    [/\b340282366920938463463374607431768211455\b/, 10],
+    [/2\s*\^\s*128\s*-\s*1\b/, 8],
+    [/(?:unlimited|infinite|max(?:imum)?)\W{0,3}(?:token )?(?:approval|allowance)|allowance.{0,40}(?:goes|went|going) down/, 6],
+  ],
+  E44: [
+    [/(?:value|tpot).{0,80}token address.{0,20}(?:stays?|stayed|stuck|kept)|(?:stays?|stayed|stuck|kept|remains?).{0,30}(?:on|at|in) the token address|token address.{0,60}(?:keeps|kept|holds|grows)/, 9],
+    [/(?:value|tpot) (?:sent |attached )?(?:along )?with a (?:token|erc-?20) (?:call|transfer)|(?:token|erc-?20) (?:call|transfer).{0,40}with a value/, 7],
+  ],
+  E45: [
+    [/value.{0,30}(?:=|equal to|equals|set to).{0,20}eth_getbalance|\bsend (?:everything|the whole balance)\b/, 8],
+    [/(?:value|balance).{0,80}(?:status\W{0,4}0x0|mined as failed|failed in (?:its|the) block)|(?:status\W{0,4}0x0|mined as failed).{0,80}(?:value|fee (?:was )?(?:paid|charged))/, 7],
+  ],
+  E46: [
+    [/effectivegasprice\W{0,6}(?:0x0|0)\b/, 9],
+    [/pallets address.{0,120}(?:status\W{0,4}0x0|failed)|gasused\W{0,6}(?:0x0|0)\b.{0,120}(?:fee|paid|charged)/, 7],
+  ],
+  E47: [
+    // two patterns that both match the dispatch form, so that this entry comes before E29 (see E38)
+    // Token(Frozen) in the forms code prints it (see variantForm below); the plain words "token frozen" do not count
+    [/\btoken(?:error)?["']?\s*(?:\(|::|\.(?!\s)|:)\s*(?:tokenerror::)?["']?frozen\b/, 10],
+    [/failed to dispatch call\W{0,4}token\W{0,4}frozen\b/, 10],
+    [/vesting\.vest\b|\bvestother\b|vesting (?:lock|schedule).{0,60}(?:ended|still|stays|not released)/, 8],
+    [/nothing (?:is )?frozen|\bfrozen\W{0,4}(?:is )?0\b/, 6],
+  ],
+  E48: [
+    [/\b746(?:1079|3379)\b/, 10],
+    [/payable\([^)]{0,40}\)\.transfer\(|\bstipend\b|\b2300\b.{0,20}\bgas\b|\bgas\b.{0,20}\b2300\b/, 7],
+    [/\.send\(.{0,60}(?:false|fails?)|returns? false.{0,40}\.send\(/, 6],
+  ],
+  E49: [
+    [/maxcalldepthreached|max(?:imum)? call depth|\bcall depth\b/, 9],
+    [/\b2[67] frames (?:deep|in all)\b|\b27th frame\b|(?:stack|call) too deep|nested calls?.{0,40}(?:stop|fail|limit|depth)/, 7],
+  ],
+  E50: [
+    // two patterns that both match the dispatch form, so that this entry comes before E29
+    [/failed to dispatch call\W{0,4}cannotlookup\b/, 10],
+    [/\bcannot ?lookup\b/, 9],
+    [/\bunknownorigin\b|\bunknown origin\b/, 9],
+    // @polkadot/types 17 cannot decode UnknownOrigin, index 12 of InvalidTransaction (whose list starts "Call, Payment")
+    [/unable to create enum via index 12, in call, payment\b/, 10],
+    [/provided signed extensions doesn't match any verifymultisignature pipeline/, 10],
+    [/multiaddress\W{0,4}address(?:20|32)\b|\baddress20\b/, 6],
+    [/checkmetadatahash|withmetadatahash/, 6],
+  ],
+  E51: [
+    [/dryrunapi|dry_run_call|\bdryruncall\b/, 10],
+    [/exported method \w+ is not found|runtime entry runtimecall\(\w+\) not found|runtime api spec not found/, 8],
+  ],
+  E52: [
+    [/request entity too large/, 10],
+    [/maximum number of chainhead_follow|-32800\b/, 10],
+    [/withruntime`? set to `?false|-32802\b/, 9],
+    [/leaf was not found|leafnotfound|local_storage_get can be called only in the offchain|offchaindb extension/, 10],
+    [/-32801\b/, 6],
+    [/\bnginx\b/, 5],
+  ],
+  E53: [
+    [/\bbadcontext\b/, 10],
+    [/\b(?:renewednotfound|baddatasize)\b/, 10],
+    // TransactionStorage is module 51: a second pattern for the dispatch form, so that this entry comes before E29
+    [/\bindex: 51, error: \[/, 9],
+    [/transactionstorage|transaction_storage/, 6],
+    [/invalid cid|failed to parse multihash|\binvalidcid\b/, 8],
+  ],
+  E54: [
+    [/(?:contract|constructor|airdrop|payout|code)\w*.{0,80}(?:pay|paid|payments?|sends?|sent)\w*.{0,40}new (?:addresses|accounts?|payees)/, 8],
+    [/new (?:addresses|accounts?|payees).{0,80}(?:0\.1 tpot|existential deposit).{0,40}(?:each|per|apiece)/, 6],
+    [/\bairdrop\b|\bpayouts?\b/, 4],
+  ],
+  E55: [
+    // the library's typed call (camel case); the runtime's own name in a backtrace has an underscore and stays with E34
+    [/\bvalidatetransaction\b[\s\S]{0,400}(?:4003|wasm|unreachable|\btrap\b)|(?:4003|unreachable|\btrap\b)[\s\S]{0,400}\bvalidatetransaction\b/, 10],
+    // the error the library throws holds only the runtime's name, in its backtrace: related, so E34 stays the best match.
+    // Not for a 1002, which comes from submitting the bytes, not from this call.
+    [/^(?![\s\S]*\b1002\b)[\s\S]*?(?:\b4003\b|unreachable)[\s\S]{0,600}taggedtransactionqueue_validate_transaction/, 5],
+    [/\.validatetransaction\(|\bvalidatetransaction\(/, 7],
+    [/incompatible runtime entry/, 10],
+  ],
 };
 
 export interface EntryMatch {
@@ -332,7 +452,10 @@ export interface EntryMatch {
 }
 
 /** Words that mark a line as part of an error, in a long text such as a whole tool answer or a log. */
-const ERRORISH = /error|fail|refus|revert|invalid|insufficient|not enough|cannot|can't|could not|unable|denied|exceed|too (?:low|high|large|small)|timed? ?out|not found|unknown|banned|outdated|stale|priority|discarded|reject|panic|warn|\bnull\b|missing|\[\]|\b1\d{3}\b|-32\d{3}|0x08c379a0|0x4e487b71|disconnect|closure|enotfound|eperm|ebusy|eacces|alert/i;
+const ERRORISH = /error|fail|refus|revert|invalid|insufficient|not enough|cannot|can't|could not|unable|denied|exceed|too (?:low|high|large|small)|timed? ?out|not found|unknown|banned|outdated|stale|priority|discarded|reject|panic|warn|\bnull\b|missing|\[\]|\b1\d{3}\b|-32\d{3}|0x08c379a0|0x4e487b71|disconnect|closure|enotfound|eperm|ebusy|eacces|alert|_validate_transaction/i;
+
+/** "Unable to create Enum via index 12, in Call, Payment, Future, ..." of @polkadot/types, up to its second name. */
+const ENUM_LIST = /(unable to create enum via index \d+, in [A-Za-z0-9_]+, [A-Za-z0-9_]+)(?:, [A-Za-z0-9_]+)+/gi;
 
 /**
  * The part of a text worth matching against the entries. A short text is kept whole. Of a long one
@@ -340,8 +463,11 @@ const ERRORISH = /error|fail|refus|revert|invalid|insufficient|not enough|cannot
  * error are kept, so that the explanations around an error do not decide which entry fits.
  */
 export function focusText(text: string): string {
-  const all = text.split(/\r?\n/);
-  if (all.length <= 6) return text;
+  // @polkadot/types lists every variant it knows after "Unable to create Enum via index N, in": the first two are
+  // kept, so that the enum can still be told, and the rest are dropped, so that their names are not read as the error
+  const t = text.replace(ENUM_LIST, '$1');
+  const all = t.split(/\r?\n/);
+  if (all.length <= 6) return t;
   return all.filter((l, i) => i === 0 || ERRORISH.test(l)).join('\n');
 }
 
@@ -367,6 +493,8 @@ interface Standard {
   /** How we know: the standard meaning, or what we measured on this chain. */
   basis: string;
   re: RegExp;
+  /** Shown before the named module errors, because it changes what they mean here (their measured cases are then left out). */
+  lead?: boolean;
 }
 
 const tokenRe = (name: string): RegExp => new RegExp(`\\btoken\\W{0,4}${name.toLowerCase()}\\b|\\b${name.toLowerCase()}\\b`);
@@ -387,11 +515,11 @@ export const STANDARD: Standard[] = [
   // the transaction pool (Substrate RPC author_submitExtrinsic, and the Ethereum RPC's eth_sendRawTransaction)
   { label: '1001 Extrinsic has invalid format', meaning: 'the node could not read the bytes as a transaction: their length does not fit them, for example bytes cut short or a raw Ethereum transaction sent to the Substrate node. author_submitAndWatchExtrinsic answers so; author_submitExtrinsic answers 1040 for the same kind of bytes. See E34', basis: MEASURED_15, re: either(code(1001), /extrinsic has invalid format/) },
   { label: '1002 Verification Error', meaning: 'the runtime could not check the transaction; the text after it gives the reason. With "Runtime error: ... wasm trap", the length fits but what it covers is not a transaction this runtime reads: empty, random bytes, hex text turned into bytes once more, no length prefix, extra bytes inside the length, or a version byte that is neither 0x84 (signed) nor 0x04 (unsigned): 0x83, 0x85, 0x45, 0x05 and 0xff were tried. See E34', basis: `${MEASURED_15} on both submit methods`, re: either(code(1002), /verification error/) },
-  { label: '1010 Invalid Transaction', meaning: 'the transaction pool refused the transaction: it failed a validity check before it ran, so it used no nonce and paid no fee. On the Substrate RPC the reason follows the text; the Ethereum RPC gives none (recipe 2f reads it without sending).', basis: `${MEASURED} on both RPCs, see E1`, re: either(code(1010), POOL_INVALID) },
+  { label: '1010 Invalid Transaction', meaning: 'the transaction pool refused the transaction: it failed a validity check before it ran, so it used no nonce and paid no fee. On the Substrate RPC the reason follows the text. The Ethereum RPC gives none: there the same bare 1010 came for a gas limit x base fee above the sender\'s eth_getBalance, a gas limit below the gas the transaction uses, a max fee below the base fee (E1), and a nonce already used (E12). Recipe 2f reads the reason without sending.', basis: `${MEASURED} on both RPCs, and on Nov 15, 2026 with sent transactions, see E1`, re: either(code(1010), POOL_INVALID) },
   { label: '1011 Unknown Transaction Validity', meaning: 'the node could not decide whether the transaction is valid, for example because it could not look up data it needs. With "NoUnsignedValidator": the call was sent unsigned, and the runtime has no check that takes it unsigned (an unsigned Balances.transferKeepAlive answered so). Sign it. See E12', basis: `${MEASURED_15} for "NoUnsignedValidator"; the other reasons: ${SUBSTRATE}`, re: either(code(1011), /unknown transaction validity/) },
-  { label: '1012 Transaction is temporarily banned', meaning: 'the pool saw these exact bytes a moment ago (refused or already included) and refuses them again for a while. On this chain the same refused bytes sent again got it from 0.6 s to about 37 s later, the longest we waited, while nothing was pending; a resend within a second can get 1013 instead. Before you sign again, check whether the account\'s nonce has passed the transaction\'s: if it has, the transaction was included; do not send it again (E12).', basis: `${MEASURED} for a native extrinsic sent twice, and on Nov 15, 2026 for Ethereum transactions, see E1`, re: either(code(1012), /temporarily banned/) },
-  { label: '1013 Transaction Already Imported', meaning: 'the pool already knows these exact bytes. On this chain it also came for refused bytes sent again within about 2 s, while nothing was pending, so it does not prove that a transaction is waiting: check the "pending" nonce or author_pendingExtrinsics before you wait. See E12', basis: `${MEASURED_15} for refused bytes sent again; for a transaction that is pending: ${SUBSTRATE}`, re: either(code(1013), /already imported/) },
-  { label: '1014 Priority is too low', meaning: 'a transaction from the same account with the same nonce is already in the pool, and the new one does not pay enough more to replace it. Wait for the first one, or replace it with a higher tip.', basis: SUBSTRATE, re: either(code(1014), /priority is too low/) },
+  { label: '1012 Transaction is temporarily banned', meaning: 'the pool saw these exact bytes a moment ago (refused or already included) and refuses them again for a while. On this chain the same refused bytes sent again got it from 0.6 s to about 37 s later, the longest we waited, while nothing was pending; a resend within a second can get 1013 instead. The bytes of a transaction already in a block, sent again, got it two blocks later. Before you sign again, check whether the account\'s nonce has passed the transaction\'s: if it has, this transaction or another with that nonce was included; do not send it again before you know which (E12).', basis: `${MEASURED} for a native extrinsic sent twice, and on Nov 15, 2026 for Ethereum transactions and for an included transaction's bytes, see E1 and E12`, re: either(code(1012), /temporarily banned/) },
+  { label: '1013 Transaction Already Imported', meaning: 'the pool knows these exact bytes. On this chain it came at once for the bytes of a transaction already in a block, on both RPCs, and for refused bytes sent again within about 2 s while nothing was pending. So it shows neither that a transaction is waiting nor that it was included: compare the nonce it was signed with against System.Account.nonce, and read system_accountNextIndex and author_pendingExtrinsics. See E12', basis: `${MEASURED_15} for an included transaction's bytes and for refused bytes, sent again; for a transaction that is pending: ${SUBSTRATE}`, re: either(code(1013), /already imported/) },
+  { label: '1014 Priority is too low', meaning: 'a transaction from the same account with the same nonce already waits in the pool, and the new one\'s priority is not higher. The two numbers are the priorities of the waiting transaction and of the new one: "(4048 vs 4048)" from the Substrate node, "(14 vs 10)" from the Ethereum RPC. Wait for the first one, or replace it with a higher tip (native) or higher fees (Ethereum).', basis: `${MEASURED_15} with sent transactions on both RPCs, see E12`, re: either(code(1014), /priority is too low/) },
   { label: '1015 Cycle Detected', meaning: 'the transaction would depend on itself through the tags the pool orders transactions by. Rare; check the nonce.', basis: SUBSTRATE, re: either(code(1015), /cycle detected/) },
   { label: '1016 Immediately Dropped', meaning: 'the pool is full, so the transaction could not enter it. Try again later.', basis: SUBSTRATE, re: either(code(1016), /immediately dropped/) },
   { label: '1018 Unactionable', meaning: 'the transaction cannot be passed on to other nodes and this node does not make blocks, so it would never be included.', basis: SUBSTRATE, re: either(code(1018), /\bunactionable\b/) },
@@ -402,22 +530,23 @@ export const STANDARD: Standard[] = [
   { label: '1040 Client error', meaning: 'an error of the node itself. With "Could not decode `OpaqueExtrinsic.0`": author_submitExtrinsic could not read the bytes as a transaction, because their length does not fit them (bytes cut short, a raw Ethereum transaction sent to the Substrate node, or hex with an odd number of digits). See E34', basis: MEASURED_15, re: either(code(1040), /client error: could not decode/) },
 
   // InvalidTransaction reasons: the text after "1010: Invalid Transaction:"
-  { label: 'InvalidTransaction Payment', meaning: 'the account cannot pay the fee, or does not exist yet. Fund it (at least the fee plus the 0.1 existential deposit).', basis: `${MEASURED}: "Inability to pay some fees (e.g. account balance too low)"`, re: /inability to pay some fees|invalid(?:transaction)?\W{1,4}payment\b|\{\s*"?payment"?\s*:\s*null\s*\}/ },
-  { label: 'InvalidTransaction BadProof', meaning: 'the signature does not check: the wrong key, a payload signed for another chain or runtime version, or a mortal transaction sent after its validity period.', basis: `${MEASURED}: "Transaction has a bad signature"`, re: /transaction has a bad signature|invalid(?:transaction)?\W{1,4}bad ?proof|\bbadproof\b/ },
-  { label: 'InvalidTransaction Stale', meaning: 'the nonce was already used. Read the account nonce again and sign with the next one.', basis: `${SUBSTRATE} ("Transaction is outdated")`, re: /transaction is outdated|invalid(?:transaction)?\W{1,4}stale\b/ },
-  { label: 'InvalidTransaction Future', meaning: 'the nonce is higher than the account\'s next nonce, so the transaction waits until the missing ones arrive.', basis: `${SUBSTRATE} ("Transaction will be valid in the future")`, re: /will be valid in the future|invalid(?:transaction)?\W{1,4}future\b/ },
-  { label: 'InvalidTransaction AncientBirthBlock', meaning: 'a mortal transaction names a birth block older than the 2400 block hashes the chain keeps (System.blockHashCount, read on Nov 14, 2026). Sign it again against a recent block.', basis: `${MEASURED_15}: "Transaction has an ancient birth block", for a mortal transaction born 3000 blocks back, see E1`, re: /ancient birth ?block|ancientbirthblock/ },
+  { label: 'InvalidTransaction Payment', meaning: 'the account cannot pay the fee, or does not exist yet. Fund it (at least the fee plus the 0.1 existential deposit). For an Ethereum transaction (the node\'s check of recipe 2f) it means that gas limit x base fee is above the sender\'s eth_getBalance, and it also came for a gas limit below the gas the transaction uses and for a max fee below the base fee (E1).', basis: `${MEASURED}: "Inability to pay some fees (e.g. account balance too low)"; the Ethereum cases on Nov 15, 2026 with sent transactions`, re: /inability to pay some fees|invalid(?:transaction)?\W{1,4}payment\b|\{\s*"?payment"?\s*:\s*null\s*\}/ },
+  { label: 'InvalidTransaction BadProof', meaning: 'the signature does not check: the wrong key, a payload signed for another chain or runtime version, or a mortal transaction sent after its validity period. The node\'s check asked at a block two or more blocks older than the one a mortal transaction was signed at answers it too, for a transaction that is fine: read the block hash after signing (E1).', basis: `${MEASURED}: "Transaction has a bad signature"; the older block on Nov 15, 2026`, re: /transaction has a bad signature|invalid(?:transaction)?\W{1,4}bad ?proof|(?<!metatx\.)\bbadproof\b/ },
+  { label: 'InvalidTransaction Stale', meaning: 'the nonce was already used: a transaction with that nonce is in a block. It may be your own earlier send, and this a retry of it, so do not sign again with a new nonce yet. Settle every earlier send of this payment by the nonce it was signed with (and by the hash you wrote down before sending it, not by the hash of this refused one). While the account is not past that nonce (get_account shows its nonce), the send can still be included: it waits in the pool, where get_transaction finds it by its hash, or behind a nonce gap, where nothing lists it. At the account\'s next nonce while get_account shows that nothing waits, it was refused or dropped: if no other send of this payment succeeded or still waits, sign it again with that same nonce. Otherwise wait for it or replace it with the same nonce (recipe 9); do not sign the payment with another nonce. Behind a nonce gap it runs only once the missing nonces are used: after replacing any other send, send a harmless transaction with each missing nonce, not the payment (recipe 9, A nonce gap). Keep at most one send of the payment able to run: if another one succeeded, also with a call inside it that failed, replace this one with a harmless transaction of its nonce and a higher tip or fees; if several still wait, keep the one with the lowest nonce and replace the others at once (recipe 9). Once the account is past it, find the block where that nonce was used (recipe 9 step 3): the transaction with that nonce there is either this payment (read its result, and the result of a call inside it) or another transaction, and then your send can never be included. It is this payment when its hash is one you wrote down for it, and the other payment when you wrote its hash down for that one; with a hash you never wrote down (a wallet speed-up has another hash), it is this payment when its call, recipient and amount are the same (get_block, then get_transaction with that block and index). Sign again only what is settled as not done: a send that failed or whose call inside failed, after fixing the cause (of a batch that stopped part way, only the calls that did not run), or one that lost its nonce to another transaction, with the nonce from system_accountNextIndex. The last two Fix bullets of E12 give each step. The Ethereum RPC answers the same case with a bare 1010 (E12).', basis: `${MEASURED_15} with sent transactions: "Transaction is outdated", see E12`, re: /transaction is outdated|invalid(?:transaction)?\W{1,4}stale\b/ },
+  { label: 'InvalidTransaction Future', meaning: 'the nonce is higher than the account\'s next nonce, so the transaction waits until the missing ones arrive. On this chain such a transaction was taken with no error at all, and then shown nowhere, not in author_pendingExtrinsics nor in system_accountNextIndex, until the missing nonce was sent (E12).', basis: `${SUBSTRATE} ("Transaction will be valid in the future"); the nonce gap ${MEASURED_15} with sent transactions`, re: /will be valid in the future|invalid(?:transaction)?\W{1,4}future\b/ },
+  { label: 'InvalidTransaction AncientBirthBlock', meaning: 'a mortal transaction names a birth block older than the 2400 block hashes the chain keeps (System.blockHashCount, read on Nov 14, 2026). Sign it again against a recent block. The node\'s check asked at the block before the one the transaction was signed at answers it too, for a transaction that is fine (E1).', basis: `${MEASURED_15}: "Transaction has an ancient birth block", for a mortal transaction born 3000 blocks back, see E1`, re: /ancient birth ?block|(?<!metatx\.)ancientbirthblock/ },
   { label: 'InvalidTransaction ExhaustsResources', meaning: 'the transaction is too heavy or too large for a block, or the block is full. Try again, or split the work.', basis: `${SUBSTRATE} ("Transaction would exhaust the block limits")`, re: /would exhaust the block limits|exhaustsresources/ },
   { label: 'InvalidTransaction Call', meaning: 'the call is not allowed in this transaction, for example an ordinary call sent unsigned. Behind a bare 1010 from the Ethereum RPC, it is the node\'s reason for a transaction signed for another chain id, a blob (type 3) or a set-code (type 4) transaction.', basis: `${MEASURED_15}: "Transaction call is not expected" for an unsigned System.remark, and the node's check of those Ethereum transactions, see E1`, re: /transaction call is not expected|invalidtransaction\W{1,4}call\b|invalid(?:"\s*:\s*"|\s+)call\b(?!\s*:)/ },
   { label: 'InvalidTransaction BadSigner', meaning: 'the signer is not allowed to send this transaction.', basis: `${SUBSTRATE} ("Invalid signing address")`, re: /invalid signing address|\bbadsigner\b/ },
+  { label: 'InvalidTransaction UnknownOrigin', meaning: 'no transaction extension gave the transaction an origin. The node\'s check answered it (0x01000c) for a version 5 "general" transaction (version byte 0x45), which this runtime reads but which none of its extensions can authorize. Sign a version 4 transaction (0x84). @polkadot/types 17 cannot decode this reply: "Unable to create Enum via index 12". See E50', basis: `${MEASURED_15} by the node's check (TaggedTransactionQueue_validate_transaction)`, re: /\bunknownorigin\b|\bunknown origin\b|unable to create enum via index 12, in call, payment\b/ },
   { label: 'InvalidTransaction Custom', meaning: 'a check specific to this chain refused it; the number after Custom says which. We do not know the meaning of this chain\'s custom codes.', basis: `${SUBSTRATE} ("InvalidTransaction custom error")`, re: /invalidtransaction custom error|invalid(?:transaction)?\W{1,4}custom\b/ },
   { label: 'InvalidTransaction BadMandatory or MandatoryValidation', meaning: 'an internal check on the calls the block author adds itself. An ordinary transaction does not meet it.', basis: SUBSTRATE, re: /labelled as mandatory|dispatch is mandatory|badmandatory|mandatoryvalidation/ },
-  { label: 'UnknownTransaction', meaning: 'the node could not look up what it needs to check the transaction, or no check exists for an unsigned one.', basis: SUBSTRATE, re: /could not lookup information required to validate|could not find an unsigned validator|unknowntransaction/ },
+  { label: 'UnknownTransaction', meaning: 'the node could not look up what it needs to check the transaction, or no check exists for an unsigned one. On this chain Unknown(CannotLookup) came for a signer given as a 0x address (MultiAddress::Address20), and for every transaction signed with CheckMetadataHash in mode 1, whatever hash it carried: sign with mode 0 (E50).', basis: `${SUBSTRATE}; Unknown(CannotLookup) ${MEASURED_15} by the node's check`, re: /could not lookup information required to validate|could not find an unsigned validator|unknowntransaction|\{\s*"unknown"\s*:\s*"cannotlookup"\s*\}|\bunknown\W{1,4}cannotlookup\b/ },
 
   // DispatchError: why a call that ran failed (in events, dry runs and "Failed to dispatch call: ...")
   { label: 'DispatchError BadOrigin', meaning: 'the call was made by an origin it does not accept: for example a signed account where the call needs root, or another account than the one allowed.', basis: `${MEASURED} and ${MEASURED_15.replace('measured on this chain on ', '')} by dry run through the pallets address, see E29`, re: /\bbad ?origin\b/ },
-  { label: 'DispatchError CannotLookup', meaning: 'an account or other data the call names could not be found, for example an address the chain cannot look up.', basis: SUBSTRATE, re: kindRe('CannotLookup') },
-  { label: 'DispatchError ConsumerRemaining', meaning: 'the account still has something that depends on it (a consumer reference), so it cannot be removed.', basis: SUBSTRATE, re: kindRe('ConsumerRemaining') },
+  { label: 'DispatchError CannotLookup', meaning: 'an account or other data the call names could not be found. Measured: a destination given as a 0x address, which @polkadot/api turns into MultiAddress::Address20 without a word (Address32 got the same). Pass { Id: <32-byte account id> }; for a MetaMask user that is the fallback account of its 0x address, which convert_address gives (E50).', basis: `${MEASURED_15} by dry run through the pallets address`, re: kindRe('CannotLookup') },
+  { label: 'DispatchError ConsumerRemaining', meaning: 'the account still has something that depends on it (a consumer reference), so it cannot be removed. At the ERC-20 address of an Assets token, "failed to run contract: ConsumerRemaining" came for an approve or a permit whose owner had only the 0.1 tPOT existential deposit (eth_getBalance 0): each approval holds 0.1 tPOT more from the owner (E41).', basis: `${SUBSTRATE}; the token case ${MEASURED_15} by eth_call`, re: kindRe('ConsumerRemaining') },
   { label: 'DispatchError NoProviders', meaning: 'the account has nothing that keeps it alive (no provider reference), so it cannot be created this way. Give it a balance first.', basis: SUBSTRATE, re: kindRe('NoProviders') },
   { label: 'DispatchError TooManyConsumers', meaning: 'too many things depend on the account already.', basis: SUBSTRATE, re: kindRe('TooManyConsumers') },
   { label: 'DispatchError RootNotAllowed', meaning: 'the call does not accept the root origin.', basis: SUBSTRATE, re: kindRe('RootNotAllowed') },
@@ -427,13 +556,13 @@ export const STANDARD: Standard[] = [
   { label: 'DispatchError Other', meaning: 'an error with only a text; read the text that came with it.', basis: SUBSTRATE, re: /dispatcherror\W{0,4}other\b|\{\s*"other"\s*:/ },
   { label: 'Token(FundsUnavailable)', meaning: 'the account does not have the funds the call wants to move or hold.', basis: `${MEASURED} and ${MEASURED_15.replace('measured on this chain on ', '')} by dry run through the pallets address, see E29`, re: tokenRe('FundsUnavailable') },
   { label: 'Token(OnlyProvider)', meaning: 'that part of the balance is what keeps the account alive, so it cannot be moved.', basis: SUBSTRATE, re: tokenRe('OnlyProvider') },
-  { label: 'Token(BelowMinimum)', meaning: 'the account would hold less than the minimum, so it cannot exist with that amount. For tPOT the minimum is the 0.1 existential deposit; for an Assets token it is the minBalance of that asset (read_storage Assets.asset shows it), counted in the smallest unit of that token. Assets.mint below the minimum answers it before a missing issuer role.', basis: `${MEASURED_15} by dry run through the pallets address: 0.01 tPOT to a new account, and amounts of an Assets token below its minimum`, re: variantRe('token', 'BelowMinimum') },
-  { label: 'Token(CannotCreate)', meaning: 'the call would create an account that cannot be created this way: measured for an Assets token that is not sufficient, sent to an account that holds no tPOT. Give the recipient at least the 0.1 tPOT existential deposit first: a Utility.batchAll of that payment and then the same asset transfer was accepted in a dry run.', basis: `${MEASURED_15} by dry run through the pallets address`, re: variantRe('token', 'CannotCreate') },
+  { label: 'Token(BelowMinimum)', meaning: 'the account would hold less than the minimum, so it cannot exist with that amount. For tPOT the minimum is the 0.1 existential deposit; for an Assets token it is the minBalance of that asset (read_storage Assets.asset shows it), counted in the smallest unit of that token. Assets.mint below the minimum answers it before a missing issuer role. At the token\'s ERC-20 address the same refusal reads "failed to run contract: Token(BelowMinimum)" (E40).', basis: `${MEASURED_15} by dry run through the pallets address: 0.01 tPOT to a new account, and amounts of an Assets token below its minimum; the ERC-20 form by eth_call`, re: variantRe('token', 'BelowMinimum') },
+  { label: 'Token(CannotCreate)', meaning: 'the call would create an account that cannot be created this way: measured for an Assets token that is not sufficient, sent to an account that holds no tPOT, both natively and at the token\'s ERC-20 address ("failed to run contract: Token(CannotCreate)", E40). Give the recipient at least the 0.1 tPOT existential deposit first: from the Ethereum side as a separate payment; natively, a Utility.batchAll of that payment and then the same asset transfer was accepted in a dry run. Such a recipient can then receive the token, but to approve it, it needs 0.1 tPOT more (E41).', basis: `${MEASURED_15} by dry run through the pallets address and by eth_call`, re: variantRe('token', 'CannotCreate') },
   { label: 'Token(UnknownAsset)', meaning: 'the asset is not known: check the asset id.', basis: SUBSTRATE, re: tokenRe('UnknownAsset') },
-  { label: 'Token(Frozen)', meaning: 'the funds exist but are frozen.', basis: SUBSTRATE, re: variantRe('token', 'Frozen') },
+  { label: 'Token(Frozen)', meaning: 'the call would spend tPOT the account must keep. A native account can send at most free - max(frozen - reserved, 0.1 tPOT), less the fee; one base unit more answers Token(Frozen), also when nothing is frozen but the account has a hold or a reserve (a staking hold, an asset owner\'s or another reserve, a contract\'s code deposit), and from transferAllowDeath too. A vesting lock stays after its schedule has ended until Vesting.vest is called. Send less, or release what keeps the tPOT; get_account names it (E47).', basis: `${MEASURED_15} by dry run through the pallets address, to the base unit, on seven kinds of account`, re: variantRe('token', 'Frozen') },
   { label: 'Token(Unsupported)', meaning: 'the asset does not support this operation.', basis: SUBSTRATE, re: variantRe('token', 'Unsupported') },
   { label: 'Token(CannotCreateHold)', meaning: 'an account cannot be created only to hold a balance.', basis: SUBSTRATE, re: tokenRe('CannotCreateHold') },
-  { label: 'Token(NotExpendable)', meaning: 'the withdrawal would take funds the account must keep, usually because it would go below the existential deposit (0.1 for tPOT) while the call keeps the account alive. Leave at least that much on it. From an account with no balance, a swap with keepAlive true answered it too (with keepAlive false, FundsUnavailable): there, fund the account.', basis: `${MEASURED_15} by dry run through the pallets address: Balances.transferKeepAlive, and AssetConversion.swapExactTokensForTokens from an empty account`, re: tokenRe('NotExpendable') },
+  { label: 'Token(NotExpendable)', meaning: 'the withdrawal would take funds the account must keep, usually because it would go below the existential deposit (0.1 for tPOT) while the call keeps the account alive. Leave at least that much on it. From an account with no balance, a swap with keepAlive true answered it too (with keepAlive false, FundsUnavailable): there, fund the account. A nomination-pool member, which has two providers, got it for one base unit above what it can send, where other accounts got Token(Frozen) (E47).', basis: `${MEASURED_15} by dry run through the pallets address: Balances.transferKeepAlive, and AssetConversion.swapExactTokensForTokens from an empty account`, re: tokenRe('NotExpendable') },
   { label: 'Token(Blocked)', meaning: 'the account cannot receive this asset.', basis: SUBSTRATE, re: variantRe('token', 'Blocked') },
   { label: 'Arithmetic(Underflow)', meaning: 'a number would go below zero, for example a balance smaller than the amount taken from it.', basis: SUBSTRATE, re: variantRe('arithmetic', 'Underflow') },
   { label: 'Arithmetic(Overflow)', meaning: 'a number would go above its largest value.', basis: SUBSTRATE, re: variantRe('arithmetic', 'Overflow') },
@@ -445,7 +574,15 @@ export const STANDARD: Standard[] = [
   { label: 'JSON-RPC -32600 Invalid Request', meaning: 'the JSON is not a valid JSON-RPC request (for example no "jsonrpc": "2.0" or no method).', basis: JSONRPC, re: /-32600\b|\binvalid request\b/ },
   { label: 'JSON-RPC -32602 Invalid params', meaning: 'a parameter has the wrong form or count; the data field says which, for example "invalid length 4, expected ... 20 bytes" for a short address.', basis: `${JSONRPC}; ${MEASURED}`, re: /-32602\b|\binvalid params\b/ },
   { label: 'JSON-RPC -32603 Internal error', meaning: 'the server failed while handling the request. Try again; if it persists, the request may hit a fault in the node.', basis: JSONRPC, re: /-32603\b|\binternal error\b/ },
-  { label: 'JSON-RPC -32000 Server error', meaning: 'a refusal defined by the node, explained by its message. On this chain\'s Ethereum RPC it carries, for example, "insufficient funds for gas * price + value", "Invalid call: Payment", "Failed to dispatch call: ...", "hash not found", "Ethereum block not found", "Account not found for address" and "Invalid transaction" (lower-case t, E35).', basis: `${JSONRPC}; the messages measured on this chain on Nov 14 and 15, 2026`, re: /-32000\b/ },
+  { label: 'JSON-RPC -32000 Server error', meaning: 'a refusal defined by the node, explained by its message. On this chain\'s Ethereum RPC it carries, for example, "insufficient funds for gas * price + value" and "Effective gas price ... lower than base fee" (E1), "Invalid call: Payment" and "Not enough gas supplied" (E27), "Failed to dispatch call: ..." (E29), "failed to run contract: ..." (E31, E40), "hash not found", "Ethereum block not found", "Account not found for address" and "Invalid transaction" (lower-case t, E35).', basis: `${JSONRPC}; the messages measured on this chain on Nov 14 and 15, 2026`, re: /-32000\b/ },
+  { label: '-32000 Not enough gas supplied', meaning: 'the gas field of eth_call or eth_estimateGas is below what the call needs. What follows names the shortfall ("Off by: N" gas) or an error the short gas caused, such as StorageDepositNotEnoughFunds: it points to the gas field, not to the balance or to the code. Leave gas out of eth_call and eth_estimateGas; for a transaction, take eth_estimateGas as the limit (E27)', basis: `${MEASURED_15} by eth_call, from senders that could pay`, re: /not enough gas supplied/, lead: true },
+  { label: '-32000 failed to run contract, at the ERC-20 address of an Assets token', meaning: 'the address is served by the runtime, not by contract code, and the error after the words is the Assets (39) or Balances (6) module\'s, or a Token(...) variant, passed on as text. It is not a revert, and a contract that calls the token gets no reason at all: dry-run the token call by itself (E40). From approve or permit, InsufficientBalance (an owner with no tPOT) and ConsumerRemaining (an owner with only the 0.1 tPOT existential deposit) mean that the owner cannot hold the approval\'s 0.1 tPOT deposit (E41)', basis: `${MEASURED_15} by eth_call and debug_traceCall`, re: /failed to run contract\W{0,4}(?:module\(moduleerror \{ index: (?:39|6)\b|token\W{0,4}\w+\)|consumerremaining\b)/, lead: true },
+  { label: '-32800 Maximum number of chainHead_follow has been reached', meaning: 'the WebSocket connection already holds 4 chainHead_v1_follow subscriptions, the node\'s limit per connection (15 other subscriptions on the same connection were accepted). Reuse one, chainHead_v1_unfollow those you no longer need, or open another connection. See E52', basis: `${MEASURED_15} on wss://test-node-v3.portaldot.dev`, re: /-32800\b|maximum number of chainhead_follow/ },
+  { label: '-32802 chainHead_follow started with withRuntime false', meaning: 'chainHead_v1_call needs a follow opened with withRuntime true: open it with [true]. See E52', basis: MEASURED_15, re: /-32802\b|withruntime`? set to `?false/ },
+  { label: '-32801 Invalid block hash', meaning: 'from a chainHead_v1 call: the block is not one the follow has pinned, and a follow pins only recent blocks. Read an older block with archive_v1_* or state_* and its hash. See E52', basis: MEASURED_15, re: /-32801\b/ },
+  { label: 'HTTP 413 Request Entity Too Large', meaning: 'the Ethereum endpoint refused the request body before the RPC saw it, with an HTML page from nginx instead of JSON. A body of 1,000,128 bytes passed and one of 2,000,128 bytes was refused; an eth_call with 1,000,000 bytes of data makes the larger one, since hex doubles the size. Keep each body under about 1 MB and split large batches. See E52', basis: `${MEASURED_15} on https://test-evm-rpc-v3.portaldot.dev`, re: /request entity too large|(?:http|status)\W{0,4}413\b/ },
+  { label: '8011 Leaf was not found', meaning: 'mmr_generateProof found no MMR leaf: the node gave no MMR proof for any block tried (block 1, and 10 and 3000 blocks back), probably because it runs without offchain indexing. Use state_getReadProof or grandpa_proveFinality, or a node with offchain indexing. See E52', basis: MEASURED_15, re: either(code(8011), /leaf was not found|\bleafnotfound\b/) },
+  { label: '4003 Client error: Execution failed', meaning: 'a runtime call (state_call, or a library\'s typed runtime call) failed. With "Exported method ... is not found": the runtime has no such API, as for DryRunApi_dry_run_call (E51). With "wasm trap: wasm `unreachable` instruction executed": the runtime could not read the bytes it was given (E34), for example because a library wrapped them once more (E55). With "local_storage_get can be called only in the offchain call context": the call needs offchain storage, which this node does not give (MmrApi_generate_proof, E52).', basis: MEASURED_15, re: code(4003) },
 
   // the texts of wrong parameters and of the Ethereum RPC's own refusals (E35 to E37)
   { label: 'Invalid params: No more params', meaning: 'a required parameter is missing: for example the block of eth_getBalance (it has no default), the boolean of eth_getBlockByNumber, or the extrinsic of author_submitExtrinsic. See E36', basis: `${MEASURED_15} on both RPCs`, re: /no more params/ },
@@ -500,6 +637,34 @@ export function findReverts(text: string): string[] {
     for (const m of text.matchAll(/revert(?:ed)?(?: with)? data\W{0,4}(0x[0-9a-f]*)/gi)) found.add(m[1].toLowerCase());
   }
   return [...found];
+}
+
+/* ---------- the numbers of "insufficient funds" ---------- */
+
+/** The gas the Ethereum RPC names when the request had no gas field: eth_estimateGas reports 2^64 - 1, eth_call None. */
+const NO_GAS_FIELD = 2n ** 64n - 1n;
+
+/**
+ * What the numbers of the Ethereum RPC's "insufficient funds for gas * price + value (N): address 0x... have H
+ * (supplied gas Some(G))" say, as measured (E1): H is the sender's eth_getBalance in wei; N is the request's gas
+ * field G x the base fee in native units (wei / 10^4), without the value, although the check adds the value;
+ * with no gas field, N is 0 and G is None or 2^64 - 1.
+ */
+export function readFunds(text: string, network: Network): string[] {
+  const m = /insufficient funds for gas \* price \+ value \((\d{1,40})\): address (0x[0-9a-fA-F]{40}) have (\d{1,40}) \(supplied gas (?:Some\((\d{1,40})\)|None)\)/i.exec(text);
+  if (!m) return [];
+  const need = BigInt(m[1]);
+  const have = BigInt(m[3]);
+  const gas = m[4] === undefined ? null : BigInt(m[4]);
+  const out = [`- insufficient funds, its numbers read: ${m[2]} can spend ${weiAmount(have, network)}, its eth_getBalance (locked tPOT and the 0.1 tPOT existential deposit are not in it).`];
+  if (gas === null || gas === NO_GAS_FIELD) {
+    out.push(`  The request had no gas field${need === 0n ? ', so the number in brackets is 0 and no fee was counted: the value alone is more than that' : ''}. A transaction also needs gas limit x base fee beside its value; sent with a value that does not fit beside it, a transaction is mined as failed and pays its fee (E45).`);
+  } else {
+    // N native units x 10^4 = G x base fee in wei
+    const baseFee = gas > 0n ? (need * 10_000n + gas / 2n) / gas : 0n;
+    out.push(`  The number in brackets is the gas field, ${gas} gas, x the base fee${baseFee > 0n ? ` (about ${baseFee} wei per gas)` : ''}, in native units: ${nativeAmount(need, network)}. The value is not in that number, but the check adds it. Give eth_estimateGas as the limit (10% more at most), or fund the account (E1).`);
+  }
+  return out;
 }
 
 /** What a text that is nothing but 0x hex probably is. */
@@ -618,6 +783,11 @@ function liveSource(conn: Loose, network: Network): ErrSource {
 
 /** Any variant of the dispatch error, in any of the forms above. Only the known variant names count, so Token(NoPermission) still names the module error. */
 const VARIANT_FORM = new RegExp(variantForm('(?:token|arithmetic|transactional)', VARIANT_NAMES), 'gi');
+/**
+ * The reasons of a refused transaction as code prints them: {"Invalid":"BadProof"}, Invalid(Payment), InvalidTransaction::Stale.
+ * They are not module errors, although MetaTx has errors named BadProof and AncientBirthBlock.
+ */
+const VALIDITY_FORM = new RegExp(variantForm('invalid(?:transaction)?', 'Call|Payment|Future|Stale|BadProof|AncientBirthBlock|ExhaustsResources|Custom|BadMandatory|MandatoryValidation|BadSigner|IndeterminateImplicit|UnknownOrigin'), 'gi');
 
 /** The module-error names a text holds, checked against a source's error list. */
 function findNames(text: string, source: ErrSource): Array<{ module?: string; error: string }> {
@@ -635,7 +805,7 @@ function findNames(text: string, source: ErrSource): Array<{ module?: string; er
     if (source.modules.has(normName(m[1])) && source.byName.has(m[2])) add(m[1], m[2]);
   }
   // Token(BelowMinimum) and Arithmetic(Overflow) are variants of the dispatch error itself, not a module's error of the same name
-  const noVariants = flat.replace(VARIANT_FORM, ' ');
+  const noVariants = flat.replace(VARIANT_FORM, ' ').replace(VALIDITY_FORM, ' ');
   for (const m of noVariants.matchAll(CAMEL)) if (source.byName.has(m[0])) add(undefined, m[0]);
   // a one-word name (Unknown, Frozen, Expendability) counts when it is the whole text, or the message of a ModuleError
   const whole = /^\W*([A-Z][A-Za-z0-9]*)\W*$/.exec(flat);
@@ -663,20 +833,25 @@ interface Named {
 }
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The parts of an entry that give no cause: from the label to the next part or the end. */
+const NOT_CAUSES = /^- \*\*(?:Not known|Others report|Basis):\*\*[\s\S]*?(?=^- \*\*|(?![\s\S]))/gm;
 
 /**
  * What our list says about a named module error: the entries that mention it, and a short note when
- * one of them explains it in brackets, as E10 does for "`Revive.TransferFailed` (a value larger than the balance)".
+ * one of them explains it in brackets, as E10 does for "`Revive.TransferFailed` (a value larger than what the account can spend, E47)".
  */
 export function listNotes(module: string, name: string): { note: string | null; ids: string[] } {
   const full = `${module}.${name}`;
-  const bracket = new RegExp(`\`(?:${escapeRe(module)}\\.)?${escapeRe(name)}\`\\s*\\(([^)]+)\\)`);
+  // with its module only: a bare name can be another module's error, as `BadProof` in E1 is a transaction's, not MetaTx's
+  const bracket = new RegExp(`\`${escapeRe(module)}\\.${escapeRe(name)}\`\\s*\\(([^)]+)\\)`);
   const ids: string[] = [];
   let note: string | null = null;
   for (const e of ERROR_ENTRIES) {
     if (!e.body.includes(full) && !e.body.includes(`\`${name}\``)) continue;
     ids.push(e.id);
-    const m = bracket.exec(e.body);
+    // a cause is read only where an entry gives causes: a bracket in "Not known", "Others report" or "Basis"
+    // holds a block number or a doubt, such as "`Proxy.NotProxy` (block 477950, E38)"
+    const m = bracket.exec(e.body.replace(NOT_CAUSES, ''));
     const said = m?.[1].trim() ?? '';
     if (!note && said && !said.startsWith('"') && !/^module \d/.test(said) && !/^E\d+$/.test(said) && said.length <= 160) note = `${said} (${e.id})`;
   }
@@ -725,7 +900,7 @@ function refuseSecrets(text: string): void {
 /* ---------- what to do next ---------- */
 
 const NEXT: Record<string, string> = {
-  E1: 'estimate_eth_transaction checks the balance rule of an Ethereum transaction before you sign; encode_call with "sender" checks a native one.',
+  E1: 'estimate_eth_transaction checks an Ethereum transaction by the measured rule (gas limit x base fee against eth_getBalance, then the value on top) before you sign; encode_call with "sender" checks a native one.',
   E2: 'estimate_eth_transaction turns the gas into tokens and gives the limits to use.',
   E3: 'convert_amount converts exactly between tokens, native base units and wei.',
   E4: 'convert_address shows both forms of an address and whether they are linked; get_account shows where the balance sits.',
@@ -735,7 +910,7 @@ const NEXT: Record<string, string> = {
   E8: 'convert_address shows whether a native account is linked to its 0x form.',
   E9: 'get_transaction shows the receipt status and the EthExtrinsicRevert event of a transaction.',
   E10: 'describe_item with the error\'s Module.Name shows the chain\'s full text for it.',
-  E12: 'get_account shows the nonce, and on the testnet whether a transaction is pending.',
+  E12: 'get_account shows the nonce and whether a transaction of the account waits for its block (from system_accountNextIndex); get_transaction also looks for a hash in the node\'s pool.',
   E13: 'get_chain_facts shows the live endpoints, genesis hashes and chain ids.',
   E14: 'get_chain_facts shows whether the chain is producing blocks.',
   E15: 'get_transaction reads the transaction from the node\'s side when the receipt is missing.',
@@ -759,6 +934,23 @@ const NEXT: Record<string, string> = {
   E36: 'get_block reads a block by its number or by either of its hashes; convert_address turns a 5... address into its 0x form.',
   E37: 'get_block shows both hashes of a block (the node\'s and the Ethereum side\'s) and turns either into the block.',
   E38: 'get_chain_facts says whether safe mode is on and through which block; read_storage {"item": "SafeMode.enteredUntil"} reads it, and {"item": "TxPause.pausedCalls"} lists the paused calls. For a call through a proxy, read_storage {"item": "Proxy.proxies", "keys": ["<the account the proxy acts for>"]} shows the proxy\'s type.',
+  E39: 'estimate_eth_transaction gives the gas limit the node needs; pass it to cast send or cast mktx with --gas-limit.',
+  E40: 'convert_address recognises a token address and names its asset; read_storage {"item": "Assets.asset", "keys": [<asset id>]} shows its status and minBalance; get_account shows whether the recipient holds tPOT.',
+  E41: 'get_account shows the owner\'s eth_getBalance, which must cover 0.1 tPOT for each new approval, and what is reserved.',
+  E42: 'get_transaction shows the node\'s side of the transfer, where Assets.Transferred carries the amount that really moved.',
+  E43: 'get_transaction shows the node\'s Assets.ApprovedTransfer event, with the amount stored.',
+  E44: 'convert_address recognises a token address before you send; get_account on the token address shows the tPOT it holds.',
+  E45: 'estimate_eth_transaction gives the verdict by the measured rule, including a transaction that would be taken and then fail in its block because the value does not fit.',
+  E46: 'get_transaction shows the fee the node charged (TransactionPayment.TransactionFeePaid), which this receipt leaves out; encode_call with "sender" dry-runs a native call before you send it.',
+  E47: 'get_account names what keeps the tPOT (locks, freezes, holds, reserves); encode_call with "sender" dry-runs the transfer to the base unit.',
+  E48: 'simulate_contract_call runs the payment as a dry run, so a payee that needs more gas shows before you send.',
+  E49: 'simulate_contract_call runs the whole call chain as a dry run.',
+  E50: 'convert_address gives the 32-byte native account of a 0x address (its fallback account for an Ethereum key), as a native destination needs it.',
+  E51: 'encode_call with "sender" dry-runs a native call from any sender through the pallets address, with no signature.',
+  E52: 'get_chain_facts lists the endpoints and what each one serves.',
+  E53: 'encode_call gives the fee of a store or renew; read_storage {"item": "TransactionStorage.transactions", "keys": [<block>]} shows what a block stored.',
+  E54: 'simulate_contract_call and simulate_contract_deploy give the storage deposit for the exact payees.',
+  E55: 'E34\'s fix shows the raw state_call form, which passes the bytes as they are.',
 };
 
 const UNDERSTANDS = [
@@ -840,9 +1032,11 @@ export default defineTool({
     let source: ErrSource | null = null;
     let reachNote: string | null = null;
     const focused = focusText(text);
+    // the variant list of a decoding error names no error of the chain (see focusText)
+    const nameable = text.replace(ENUM_LIST, '$1');
     const pureEntries = matchEntries(focused);
     const pureStandard = standardMatches(focused);
-    const wantsChain = pairs.length > 0 || mayNameModuleError(text, network) || (wholeIdentifier && !pureEntries.length && !pureStandard.length);
+    const wantsChain = pairs.length > 0 || mayNameModuleError(nameable, network) || (wholeIdentifier && !pureEntries.length && !pureStandard.length);
     if (wantsChain) {
       try {
         const pending = getConn(network.key);
@@ -857,7 +1051,7 @@ export default defineTool({
           ? `The ${network.label} node could not be reached (${why}), so module errors were named from ${source.how}. The live chain may have changed since.`
           : `The ${network.label} node could not be reached (${why}), and no saved metadata could be read, so module errors could not be named.`;
       }
-      if (source) named = nameModuleErrors(text, pairs, source);
+      if (source) named = nameModuleErrors(nameable, pairs, source);
     }
 
     // the entries, matched again with the names found, so that "80.24" also finds E7
@@ -895,14 +1089,20 @@ export default defineTool({
     /** The measured cases go under their error; the first group also names the file they come from, once. */
     const addSeen = (to: string[], seen: string[]): void => {
       to.push(...seen);
-      if (seen.length && !seenAny) to.push('  More measured cases, call by call (all by dry run; none confirmed by a sent transaction): references/native-call-errors.md of the knowledge pack.');
+      if (seen.length && !seenAny) to.push('  More measured cases, call by call (all by dry run; a case that says "sent" was also sent as a transaction): references/native-call-errors.md of the knowledge pack.');
       if (seen.length) seenAny = true;
     };
+    const standardLine = (s: Standard): string => `- ${s.label}: ${s.meaning.replace(/\.$/, '')} (${s.basis}).`;
+    // first what changes the meaning of the rest: the numbers of "insufficient funds" in tPOT, and a lead such as
+    // "Not enough gas supplied", after which a named error's measured cases (other causes) would mislead
+    const lead = standard.filter((s) => s.lead);
+    const funds = readFunds(text, network);
+    what.push(...funds, ...lead.map(standardLine));
     if (named.length) {
       what.push(`${named.length === 1 ? 'Module error' : 'Module errors'}, named from ${source?.how}:`);
       for (const n of named) {
         what.push(`- ${n.title}${n.info?.text ? `. The chain's text: "${cut(n.info.text, 400)}"` : n.info ? ". The chain's metadata has no text for it." : ''}`);
-        addSeen(what, n.info ? seenLines(n.info.module, n.info.name) : []);
+        addSeen(what, n.info && !lead.length ? seenLines(n.info.module, n.info.name) : []);
         if (listNote.has(n)) {
           const m = /^(.*) \((E\d+)\)$/.exec(listNote.get(n) ?? '');
           if (m) what.push(`  Our list (${m[2]}) gives the cause: ${m[1]}.`);
@@ -919,7 +1119,8 @@ export default defineTool({
     for (const r of reverts) rest.push(`- Revert data ${readRevert(r)}`);
     if (!reverts.length) for (const h of hexAlone) rest.push(`- ${h}`);
     for (const s of standard) {
-      rest.push(`- ${s.label}: ${s.meaning.replace(/\.$/, '')} (${s.basis}).`);
+      if (s.lead) continue;
+      rest.push(standardLine(s));
       // Token(BelowMinimum), Arithmetic(Underflow), DispatchError BadOrigin: the cases we measured for that error
       const variant = /^(Token|Arithmetic)\((\w+)\)$/.exec(s.label);
       const word = /^DispatchError (\w+)$/.exec(s.label);
@@ -960,6 +1161,7 @@ export default defineTool({
     if (readAsRevert && !nextLines.some((l) => l.startsWith('simulate_contract_call'))) nextLines.push('simulate_contract_call runs the call again as a dry run and decodes its result');
 
     const found = [
+      funds.length && 'the balance and the gas cost it names, in tPOT',
       named.length && `${named.length === 1 ? 'a module error' : 'module errors'} named from the chain's metadata`,
       readAsRevert && 'the revert data decoded',
       hexAlone.length && !readAsRevert && 'what the hex value is',

@@ -87,3 +87,48 @@ export async function readReviveAccount(conn: Conn, h160: string): Promise<Reviv
 
 /** "EVM" or "PolkaVM", from the chain's code type. */
 export const codeKind = (codeType: string): string => (codeType === 'Evm' ? 'EVM' : codeType === 'Pvm' ? 'PolkaVM' : codeType);
+
+/* ---------- transactions that wait for a block ---------- */
+
+// Measured on the testnet on Nov 15, 2026 with real sends, native and Ethereum:
+// - while a transaction is taken and waits for its block, system_accountNextIndex of the account
+//   that pays (for an Ethereum key, its fallback account) is its nonce + 1, and the node's
+//   author_pendingExtrinsics holds the transaction;
+// - eth_getTransactionCount with "pending" equals "latest" all the same: it does not count them;
+// - a transaction signed with a nonce above the next one (a gap) is taken too, but the node holds it
+//   apart: it is not in author_pendingExtrinsics and system_accountNextIndex does not count it,
+//   until the missing nonce is sent.
+
+export interface PoolNonce {
+  /** System.Account.nonce now: how many transactions of the account are in blocks. */
+  nonce: number;
+  /** system_accountNextIndex: that nonce plus the account's transactions that wait, ready, in the node's pool. */
+  next: number;
+}
+
+/**
+ * The account's nonce and its next index, read live. The next index is read first: a transaction
+ * that reaches a block between the two reads then counts as done, not as waiting.
+ */
+export async function readPoolNonce(conn: Conn, holderSs58: string): Promise<PoolNonce> {
+  const api = conn.api as Loose;
+  const next = Number((await api.rpc.system.accountNextIndex(holderSs58)).toString());
+  const account = await api.query.system.account(holderSs58);
+  return { nonce: Number(account.nonce.toString()), next };
+}
+
+/** How many of the account's transactions wait for a block, from the two numbers. */
+export const waitingCount = (p: PoolNonce): number => Math.max(0, p.next - p.nonce);
+
+/** One sentence: what the node's pool shows for this account, and what it cannot show. */
+export function waitingText(p: PoolNonce): string {
+  const n = waitingCount(p);
+  if (n === 0) {
+    return `nothing of this account is waiting for a block (system_accountNextIndex ${p.next} equals the nonce). A transaction signed with a later nonce, above ${p.next}, would not show here: the node holds such a transaction apart, unseen, until the missing nonce is sent.`;
+  }
+  return (
+    `${n === 1 ? '1 transaction' : `${n} transactions`} of this account ${n === 1 ? 'is' : 'are'} waiting for ${n === 1 ? 'its' : 'their'} block: taken by the node, not in a block yet (system_accountNextIndex ${p.next}, nonce ${p.nonce}). ` +
+    `A new transaction sent after ${n === 1 ? 'it' : 'them'} takes nonce ${p.next}. One signed with ${n === 1 ? `nonce ${p.nonce}` : `a nonce from ${p.nonce} to ${p.next - 1}`} competes with a waiting one: ` +
+    'with the same fees it is refused with 1014 (Priority is too low), with a higher fee or tip it replaces it (measured on Nov 15, 2026).'
+  );
+}

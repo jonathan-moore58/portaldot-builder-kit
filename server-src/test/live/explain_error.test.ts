@@ -94,11 +94,22 @@ test('both kinds of revert data are decoded, without a connection', async () => 
   assert.equal(connects, 0);
 });
 
-test('a 1014 text gives the standard meaning, marked as not measured, and E12', async () => {
+test('a 1014 text gives the measured meaning and E12', async () => {
   const r = await explain('1014: Priority is too low: (2 vs 2)');
-  assert.match(r.text, /1014 Priority is too low: .*standard Substrate meaning, not measured by us on this chain/);
+  assert.match(r.text, /1014 Priority is too low: .*priorities of the waiting transaction and of the new one.*measured on this chain on Nov 15, 2026/);
   assert.equal(bestOf(r.text), 'E12');
   assert.match(r.text, /Next: get_account/);
+  assert.equal(connects, 0);
+});
+
+test('a used nonce ("Transaction is outdated") says to look up the earlier send, not to sign with the next nonce', async () => {
+  for (const text of ['1010: Invalid Transaction: Transaction is outdated', '{"code":1010,"message":"Invalid Transaction","data":"Transaction is outdated"}']) {
+    const r = await explain(text);
+    assert.match(r.text, /- InvalidTransaction Stale: .*do not sign again with a new nonce yet.*hash you wrote down/, text);
+    assert.doesNotMatch(r.text, /sign with the next one/, text);
+    assert.equal(bestOf(r.text), 'E12', text);
+    assert.match(r.text, /- After `Transaction is outdated`, or a bare 1010 from the Ethereum RPC for a nonce already used, do not sign again at once/, text);
+  }
   assert.equal(connects, 0);
 });
 

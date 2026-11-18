@@ -154,7 +154,8 @@ test('dry run from a native sender: the chain accepts System.remark from the Tre
   assert.match(r.text, /  reply: a gas figure of \d+, with no error\n/);
   assert.match(r.text, /  how: from 0x8DDEe436166f311ddeED36d714B08F512670d16e \(this account's 0x form\) to the pallets address, .* through (?:eth_estimateGas on the Ethereum RPC https:\/\/test-evm-rpc-v3\.portaldot\.dev|the node's runtime API \(ReviveApi eth_estimate_gas\), because the Ethereum RPC gave no usable answer .*?)\. The chain links that 0x form to this account, so the call ran as this account itself\./);
   assert.match(r.text, /Checked on Nov 15, 2026 with 143 such dry runs in 18 modules on the testnet/);
-  assert.match(r.text, /no sent transaction has confirmed these answers/);
+  assert.match(r.text, /Transactions we sent on Nov 15, 2026 confirmed a few of these answers \(a transfer above the balance, Proxy\.NotProxy, TransactionStorage\.renew of nothing\) and showed two that mislead \(a valid TransactionStorage\.store or renew answers BadContext in a dry run, and succeeded when sent; a Proxy\.proxy whose proxy type does not cover the call is accepted in a dry run, and when sent it succeeded while the call inside failed with System\.CallFiltered\): read_guide \{"topic": "native-call-errors"\}\. The others rest on dry runs alone\./);
+  assert.doesNotMatch(r.text, /no sent transaction has confirmed these answers/);
   if (/covers it: yes/.test(r.text)) assert.match(r.text, /\(This counts tPOT only\. Whether the sender holds the rest the call needs, such as another token or an NFT, is the dry run's answer below\.\)/);
   assert.doesNotMatch(r.text, /Note: .* runs a call inside/);
   const raw = await eth('eth_estimateGas', [{ from: TREASURY_H160, to: PALLETS_ADDRESS, data: '0x00000400' }]);
@@ -234,10 +235,11 @@ test('with a 0x sender on the testnet: route b with the gas rule; a native accou
   const [est, price, limit, maxFee] = m.slice(1).map(BigInt);
   assert.equal(limit, est + est / 10n);
   assert.equal(maxFee, price + price / 8n);
-  assert.match(r.text, new RegExp(`gas limit x max fee = \\S+ tPOT \\(${limit * maxFee} wei\\)`));
+  assert.match(r.text, new RegExp(`to be taken by the node: gas limit x base fee = \\S+ tPOT \\(${limit * price} wei\\)`));
   const balance = BigInt(/balance now \(eth_getBalance[^)]*\): \S+ tPOT \((\d+) wei\)/.exec(r.text)?.[1] ?? '-1');
   assert.ok(balance >= 0n, r.text);
-  assert.match(r.text, balance >= limit * maxFee ? /enough to be accepted: yes/ : /enough to be accepted: NO, short by \S+ tPOT \(\d+ wei\)/);
+  assert.match(r.text, balance >= limit * price ? /verdict: TAKEN, and it should succeed/ : /verdict: REFUSED with error 1010/);
+  if (balance < limit * price) assert.match(r.text, /verdict: REFUSED with error 1010: .* Send at least \S+ tPOT to 5\w+ first \(that covers a rise of the base fee up to the max fee before the block\)\./);
   assert.match(r.text, /Next: estimate_eth_transaction/);
 
   const own = await run({ call: 'System.remarkWithEvent', args: ['hi'], sender: TREASURY_H160 });

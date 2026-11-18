@@ -82,7 +82,13 @@ test('the Treasury on the testnet, as SS58: a module account, linked, numbers ma
   assert.match(r.text, /One nonce serves both sides/);
   assert.match(r.text, /\(free - the 0\.1 tPOT existential deposit\) x 10000 \+ dust/);
   assert.match(r.text, /eth_getBalance at block \d+: the same/);
-  assert.match(r.text, /eth_getTransactionCount of 0x8DDEe436166f311ddeED36d714B08F512670d16e: latest \d+, pending \d+/);
+  // "pending" equals "latest" on this chain even while a transaction waits (measured on Nov 15, 2026): never "Nothing is pending"
+  assert.match(r.text, /eth_getTransactionCount of 0x8DDEe436166f311ddeED36d714B08F512670d16e: latest \d+, pending \d+\. On this chain "pending" equals "latest" even while a transaction waits for its block/);
+  assert.doesNotMatch(r.text, /Nothing is pending/);
+  // the Treasury never signs, so nothing of it waits; the number is the node's own
+  const next = Number(await rpc(httpOf('testnet'), 'system_accountNextIndex', [TREASURY]));
+  assert.match(r.text, new RegExp(`- waiting for a block \\(read just now\\): nothing of this account is waiting for a block \\(system_accountNextIndex ${next} equals the nonce\\)\\. A transaction signed with a later nonce, above ${next}, would not show here`));
+  assert.doesNotMatch(r.text, /now runs runtime spec/, 'the testnet still runs the runtime the facts were measured on (spec 3002)');
   assert.doesNotMatch(r.text, /flags/);
   const n = numbers(r.text);
   assert.equal(n.holder, TREASURY);
@@ -149,6 +155,7 @@ test('a contract found on the chain now: code, deposits and the storage hold', a
   assert.match(r.text, /code hash 0x[0-9a-f]{64}/);
   assert.match(r.text, /contracts that use this code: \d+/);
   assert.match(r.text, /its Revive\.StorageDepositReserve hold is exactly this/);
+  assert.doesNotMatch(r.text, /waiting for a block|"pending" equals "latest"/, 'a contract has no key, so nothing of it can wait');
   assert.match(r.text, /code deposit: \S+ tPOT \(\d+ base units\), paid by 5/);
   const codeHash = /code hash (0x[0-9a-f]{64})/.exec(r.text)?.[1];
   const info = (await api.query.revive.codeInfoOf(codeHash)).toJSON();
@@ -179,6 +186,9 @@ test('the mainnet: POT, the node figure, and no Ethereum RPC', async () => {
   assert.match(r.text, / POT \(\d+ base units\)/);
   assert.doesNotMatch(r.text, /tPOT/);
   assert.match(r.text, /has no public Ethereum RPC/);
+  // waiting transactions are read from the node, so the mainnet has the line too
+  assert.match(r.text, /- waiting for a block \(read just now\): nothing of this account is waiting for a block \(system_accountNextIndex \d+ equals the nonce\)/);
+  assert.doesNotMatch(r.text, /now runs runtime spec/, 'the mainnet still runs the runtime the facts were measured on (spec 3001)');
   await checkAgainstRawRpc('mainnet', r.text);
   const u = await run({ address: UNUSED, network: 'mainnet' });
   assert.equal(u.isError, false, u.text);

@@ -2,7 +2,7 @@
 
 What a developer used to Ethereum expects, what Portaldot V3 does instead, and what to do about it. Read it when you port Ethereum code, tools or habits to this chain.
 
-Each item gives what you would expect on Ethereum, what this chain does (with its basis), and what to do. Basis words: Checked (measured on the chain by the Bridge Zero team, on the date given), Experience (learned while building and running our own tools on this chain), Guide (the chain team's testnet guide), Reported (said by other builders, not checked by us). `evm-checks.md` has the measured opcode, precompile and RPC details; error numbers (E1, E2 and so on) refer to `errors.md`.
+Each item gives what you would expect on Ethereum, what this chain does (with its basis), and what to do. Basis words: Checked (measured on the chain by the Bridge Zero team, on the date given), Experience (learned while building and running our own tools on this chain), Guide (the chain team's testnet guide), Reported (said by other builders, not checked by us). `evm-checks.md` has the measured opcode, precompile and RPC details; error numbers refer to `errors.md`.
 
 ## Accounts and amounts
 
@@ -17,11 +17,11 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
 3. **The balance is all yours to spend.**
    - Ethereum: `eth_getBalance` is the whole balance, and an account can be emptied to 0.
    - Here: an account must keep 0.1 tPOT (the existential deposit), and `eth_getBalance` = (free - max(frozen, existential deposit)) x 10000 wei + the account's dust: it leaves out the 0.1, or a larger frozen amount such as a vesting lock (Checked Nov 14, 2026 on 19 accounts on both networks).
-   - Do: keep 0.1 tPOT on every account, add 0.1 when a payment creates a new account, and read reserved and frozen amounts on the native side (`get_account`).
-4. **A nonce per address.**
-   - Ethereum: each address has its own nonce.
-   - Here: one nonce per account is shared by the native and the Ethereum side (Checked Nov 14, 2026).
-   - Do: send one transaction at a time per account, and only when the pending count equals the latest count.
+   - Do: keep 0.1 tPOT on every account, add 0.1 when a payment creates a new account, also when contract code makes the payment (E54), and read reserved and frozen amounts on the native side (`get_account`).
+4. **A nonce per address, and a pool the RPC can see.**
+   - Ethereum: each address has its own nonce, and the RPC shows a transaction that waits in the pool: `eth_getTransactionByHash` finds it and the `pending` count includes it.
+   - Here: one nonce per account is shared by the native and the Ethereum side (Checked Nov 14, 2026). The Ethereum RPC does not see the pool: while a sent transaction waited for its block, `eth_getTransactionByHash` and `eth_getTransactionReceipt` answered `null` and the `pending` count equalled the `latest` count, while the node's `system_accountNextIndex` was the account nonce + 1 (Checked Nov 15, 2026, a sent transaction, block 477944; `evm-checks.md` section 4).
+   - Do: send one transaction at a time per account, and only when `system_accountNextIndex` equals the account's nonce (`get_account` shows it); look a waiting transaction up with `get_transaction`, which also searches the node's pool.
 5. **The same key works on every EVM chain.**
    - Ethereum: an address from a key is valid on every EVM chain.
    - Here: true for a MetaMask key; false for a native account's `0x` form, which has no private key (Experience).
@@ -33,13 +33,13 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
    - Ethereum: gas is work done; a plain transfer is 21000 gas.
    - Here: gas also pays the storage deposits, so a receipt's `gasUsed x effectiveGasPrice` = the fee plus all deposits held (Checked Nov 14, 2026 on 8 receipts against the node's events). Estimates are about 10^12 gas for a plain transfer, about 10^14 for a call that writes a new storage slot and 10^15 to 10^16 for a deployment (Checked Oct 19 to Nov 14, 2026). A `gas` field of 21000 answers `Invalid call: Payment` (E27).
    - Do: judge costs in tokens (gas x gas price / 10^18), dry-run to see the deposit (`amounts-and-fees.md`), and leave `gas` out of `eth_call` and `eth_estimateGas`.
-7. **A generous gas limit is harmless.**
-   - Ethereum: unused gas is refunded, so a high limit costs nothing.
-   - Here: the node refuses with error 1010 a transaction whose gas limit x base fee, plus its value, is more than the balance (Checked Nov 13, 2026; E1). `eth_estimateGas` does not check that the sender can pay the fee: it answers for an address with no balance (Checked Nov 14, 2026).
-   - Do: gas limit = estimate + 10 percent, max fee = `eth_gasPrice` + one eighth, priority fee 0, and check balance >= value + gas limit x max fee before signing (Experience, proven by six contract calls between Oct 19 and Nov 1, 2026). `estimate_eth_transaction` does this check.
+7. **A generous gas limit is harmless, and a transaction the sender cannot pay is refused.**
+   - Ethereum: unused gas is refunded, so a high limit costs nothing; the pool refuses a transaction whose value + gas limit x gas price is more than the balance.
+   - Here: unused gas is not charged either, but the node refuses with a bare error 1010 a transaction whose gas limit x base fee is more than the sender's `eth_getBalance`. The max fee, a legacy gas price, the priority fee and the value are not part of that check. So a transaction whose value the sender cannot pay on top of the fee is taken, mined as failed, and charged its fee (Checked Nov 15, 2026 by sent transactions: taken with gas limit x max fee at twice the balance, block 478128; refused at gas limit x base fee 5 percent above the balance; mined as failed for the whole balance as value, block 477900; E1, E45). `eth_estimateGas` without a gas field does not check that the sender can pay the fee: it answers for an address with no balance (Checked Nov 14, 2026).
+   - Do: gas limit = the estimate (+ up to 10 percent), max fee = `eth_gasPrice` + one eighth, priority fee 0, and before signing check balance >= value + gas limit x max fee: that covers the node's check, with room for the base fee to rise. To send everything, value = balance - gas limit x max fee (`amounts-and-fees.md`). `estimate_eth_transaction` checks the balance; the tools' own fields are in `contracts.md`, section Tools.
 8. **The gas price is a fee market.**
    - Ethereum: the base fee moves with demand, and a priority fee buys inclusion.
-   - Here: `eth_gasPrice` is the base fee and a priority fee of 0 is accepted; `eth_maxPriorityFeePerGas` returns 0, and `eth_feeHistory` shows the same base fee in every block with `gasUsedRatio` 0 (Checked Nov 14, 2026). On the testnet the price was 38840 wei on Oct 19, 2026 and about 15700 wei on Nov 14, 2026 (it fell from 15825 to 15575 during that day); on the mainnet it was 5000 wei, read through the node on Nov 14, 2026 (Checked on each date).
+   - Here: `eth_gasPrice` is the base fee and a priority fee of 0 is accepted; `eth_maxPriorityFeePerGas` returns 0, and `eth_feeHistory` shows the same base fee in every block, every reward 0, and a `gasUsedRatio` of the block's gas used / (2^64 - 1): 0, or about 4.4 x 10^-8 for a block with one transfer (Checked Nov 14 and 15, 2026). The fee is gas used x base fee whatever was offered: a priority fee of half and of twice the base fee, and legacy gas prices of 2 and 4 x the base fee, were not charged (Checked Nov 15, 2026, sent transactions, blocks 477816 to 478130). A higher fee still won between two transactions with the same nonce: it replaced the other, and a third transaction with the replaced one's lower fees got `{"code":1014,"message":"Priority is too low: (14 vs 10)"}` (block 477889). On the testnet the price was 38840 wei on Oct 19, 2026 and about 15700 wei on Nov 14, 2026 (it fell from 15825 to 15575 during that day); on the mainnet it was 5000 wei, read through the node on Nov 14, 2026 (Checked on each date).
    - Do: set the priority fee to 0 and read the gas price each time. Gas numbers do not carry over between the two networks.
 9. **Deploying costs gas and nothing else.**
    - Ethereum: a deployment pays gas once, 200 gas per byte of code.
@@ -66,11 +66,11 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
     - Do: page by block range anyway in an indexer, set a long client timeout, and keep `fromBlock` <= `toBlock` <= the head.
 14. **A reverted transaction shows as failed everywhere.**
     - Ethereum: a revert gives receipt status 0, and that is all.
-    - Here: a reverted Ethereum transaction still completes at the extrinsic level: the node shows `ExtrinsicSuccess` plus a `revive.EthExtrinsicRevert` event. A reverted creation transaction still carries a `contractAddress` on its receipt, with no code there (Checked Nov 14, 2026: the chain's own description of that event, and blocks 343008 to 343010).
+    - Here: a reverted Ethereum transaction still completes at the extrinsic level: the node shows `ExtrinsicSuccess` plus a `revive.EthExtrinsicRevert` event. A reverted creation transaction still carries a `contractAddress` on its receipt, with no code there (Checked Nov 14, 2026: the chain's own description of that event, and blocks 343008 to 343010). Besides reverts, a transaction is also mined with status 0, and pays its fee, when its value is more than the balance left after the fee (item 7), and when a native call sent through the pallets address fails (Checked Nov 15, 2026, blocks 477900 and 477826).
     - Do: read the receipt's `status`, or look for `EthExtrinsicRevert` among the extrinsic's events; after a deployment, check `eth_getCode` at the new address.
 15. **The receipt and transaction fields mean what they mean on Ethereum.**
     - Ethereum: `cumulativeGasUsed` adds up the block, `gasPrice` is filled in, and `transactionIndex` 0 is the first transaction.
-    - Here: `cumulativeGasUsed` is `0x0` in every receipt; a mined type 2 transaction shows `gasPrice` `0x0` (the price paid is the receipt's `effectiveGasPrice`); `transactionIndex` is the extrinsic's position in the Substrate block, where extrinsic 0 is the `timestamp.set` inherent, so it is never 0. A native call sent from a `0x` account to the pallets address has a receipt with `gasUsed` 0, `effectiveGasPrice` 0 and no logs (Checked Nov 13 and Nov 14, 2026; `evm-checks.md` section 5).
+    - Here: `cumulativeGasUsed` is `0x0` in every receipt; a mined type 2 transaction shows `gasPrice` `0x0` (the price paid is the receipt's `effectiveGasPrice`); `transactionIndex` is the extrinsic's position in the Substrate block, where extrinsic 0 is the `timestamp.set` inherent, so it is never 0. A native call sent from a `0x` account to the pallets address has a receipt with `gasUsed` 0, `effectiveGasPrice` 0 and no logs (Checked Nov 13 and Nov 14, 2026; `evm-checks.md` section 5), even when it failed and the sender paid 0.0162 tPOT (Checked Nov 15, 2026, block 477826; E46).
     - Do: read gas from `gasUsed`, the price from `effectiveGasPrice`, and the node's events for calls through the pallets address.
 16. **A block has one hash and a state root.**
     - Ethereum: one block hash, and a `stateRoot` to check state proofs against.
@@ -113,7 +113,7 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
     - Do: subscribe with `newBlockHeaders`, or give a library that subscribes with `newHeads` the HTTPS endpoint and let it poll `eth_blockNumber` and `eth_getLogs`.
 25. **One wallet signs everything.**
     - Ethereum: one wallet signs every transaction.
-    - Here: native wallets sign native extrinsics; Ethereum transactions need an Ethereum wallet. Reported: the Portaldot wallet cannot sign Ethereum transactions.
+    - Here: native wallets sign native extrinsics; Ethereum transactions need an Ethereum wallet. An Ethereum key can sign a native extrinsic (signature type `Eth`, index 3, over keccak-256 of the payload, or of its blake2-256 hash when the payload is longer than 256 bytes), but only for the account keccak-256(the 33-byte compressed public key)[12..] followed by twelve `0xEE` bytes, which is not the account of the key's usual `0x` address. Signed for that usual address's account, or with EIP-191 `personal_sign`, the node's check answered `BadProof` (Checked Nov 15, 2026: the node's validity check of extrinsics signed by random keys; nothing was sent). Reported: the Portaldot wallet cannot sign Ethereum transactions.
     - Do: plan for two wallets, or send native calls from a `0x` account through the pallets address (`native-modules.md`).
 26. **The mainnet has an Ethereum RPC.**
     - Ethereum: every network has a public JSON-RPC.
@@ -140,8 +140,8 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
     - Do: do not size work by the gas limit; split a batch when it fails with that text or `OutOfGas`.
 31. **A token on the Ethereum side is a contract.**
     - Ethereum: an ERC-20 token is a deployed contract.
-    - Here: every asset of the Assets module has an ERC-20 address that the runtime serves, with no deployed contract: the asset id as 4 big-endian bytes, 12 zero bytes, `0x0001`, `0x0000` (asset 2 is `0x0000000200000000000000000000000000010000`); PoolAssets the same with `0x0002`. `name`, `symbol`, `decimals`, `totalSupply` and `balanceOf` matched the module's storage (Checked Nov 14, 2026). Transfers through these addresses were not tried.
-    - Do: compute the address from the asset id (`convert_address` names it), and check that the asset exists: an unknown id answers `totalSupply()` with 0.
+    - Here: every asset of the Assets module has an ERC-20 address that the runtime serves, with no deployed contract: the asset id as 4 big-endian bytes, 12 zero bytes, `0x0001`, `0x0000` (asset 2 is `0x0000000200000000000000000000000000010000`); PoolAssets the same with `0x0002`. `name`, `symbol`, `decimals`, `totalSupply` and `balanceOf` matched the module's storage (Checked Nov 14, 2026). Writes work too, with differences: `decimals` is the asset's own (6 for pUSD), a failure reaches a calling contract with no reason, every approval holds 0.1 tPOT from the owner, and an unlimited approval is stored as 2^128 - 1 and goes down with use (Checked Nov 15, 2026, dry runs and sent transactions; `evm-checks.md` section 3, E40 to E44).
+    - Do: compute the address from the asset id (`convert_address` names it), and check that the asset exists: an unknown id answers `totalSupply()` with 0. Read `decimals()`, and keep 0.1 tPOT above the existential deposit on any account that approves.
 32. **No admin can change a deployed contract.**
     - Ethereum: code without an upgrade path cannot change.
     - Here: both networks have a Sudo key, and the root origin can replace a contract's code with `revive.setCode` (Checked Nov 14, 2026).
@@ -150,3 +150,11 @@ Each item gives what you would expect on Ethereum, what this chain does (with it
     - Ethereum: contracts are EVM bytecode, and tokens are contracts.
     - Here: Revive runs EVM bytecode and PolkaVM code, and the separate Contracts module runs ink! (Checked Nov 14, 2026). A Revive token, an Assets asset and an Nfts NFT are separate objects (Guide); only Assets tokens are also reachable from Solidity, at their ERC-20 addresses (item 31).
     - Do: pick one token world per token.
+34. **`transfer()` and `send()` give the payee 2300 gas.**
+    - Ethereum: the payee gets a 2300-gas stipend: enough to log an event, not to write storage or call out, which is what stops re-entry.
+    - Here: in `eth_call` the payee gets 7,461,079 gas, and a call that sends value with a gas cap gives the cap + 7,461,079. A payee can then emit events and overwrite a slot that already exists, but cannot write a new slot (about 3.84 tPOT of deposit) or make any external call (about 7.7 x 10^7 gas), so re-entry through `transfer()` and `send()` still fails; a cap of 10^12 allowed it (Checked Nov 15, 2026, dry runs; E48).
+    - Do: check the flag of `send()` and of every call; size a gas cap from a dry run on this chain, never from Ethereum numbers; prefer pull payments.
+35. **Calls can nest 1024 deep.**
+    - Ethereum: the call depth limit is 1024.
+    - Here: 26 frames in all, the top call included, for `CALL`, `DELEGATECALL`, `STATICCALL` and chains of `CREATE`. The next call fails silently with empty data, and passed up it reads as `execution reverted: ` with data `0x`, like an empty revert (Checked Nov 15, 2026, dry runs; E49).
+    - Do: keep routers, proxies and factories shallow, turn recursion into loops, and handle a failed call at every level.

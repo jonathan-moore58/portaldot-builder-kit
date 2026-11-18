@@ -131,11 +131,37 @@ function touch(key: NetworkKey): void {
   slot.idle.unref();
 }
 
+/**
+ * The facts in these tools that carry a date were measured on the runtime whose metadata is saved in
+ * the source (testnet spec 3002 and mainnet spec 3001 for version 0.3.0). After a runtime upgrade
+ * they may no longer hold, while everything read live stays right. Null when the spec is the saved
+ * one, and for a node of another chain, which the genesis warning covers.
+ */
+export function specWarning(network: Network, live: { genesis: string; specVersion: number }): string | null {
+  const saved = SAVED_METADATA[network.key];
+  if (!saved || saved.genesis !== network.genesis || live.genesis !== network.genesis) return null;
+  if (!Number.isSafeInteger(live.specVersion) || live.specVersion === saved.specVersion) return null;
+  return (
+    `WARNING: the ${network.label} now runs runtime spec ${live.specVersion}, and the facts in these tools that carry a date were measured on spec ${saved.specVersion}: after this runtime upgrade they may no longer hold. ` +
+    'What the tools read live is still right. Update the Portaldot Builder Kit to its newest version: it may have the facts checked on the new runtime.'
+  );
+}
+
 /** The connection to a network, opened on first use and reopened if it was lost. */
 export async function getConn(key: NetworkKey): Promise<Conn> {
   const conn = await connect(key);
   const store = callContext.getStore();
-  if (store) for (const w of conn.warnings) store.warnings.add(w);
+  if (store) {
+    for (const w of conn.warnings) store.warnings.add(w);
+    // Asked on every call: the library follows a runtime upgrade while the connection stays open.
+    let spec: string | null = null;
+    try {
+      spec = specWarning(conn.network, { genesis: conn.api.genesisHash.toHex(), specVersion: conn.api.runtimeVersion.specVersion.toNumber() });
+    } catch {
+      spec = null; // no runtime version known yet: nothing to compare
+    }
+    if (spec) store.warnings.add(spec);
+  }
   return conn;
 }
 

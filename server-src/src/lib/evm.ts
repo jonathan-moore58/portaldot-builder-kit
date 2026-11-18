@@ -1,7 +1,9 @@
-// Reading what a Solidity call gave back: the reason of a revert, or plain return data.
+// The Ethereum side of a transaction: the reason of a revert or plain return data, the fields of a
+// signed raw transaction, and the balance rule the node applies before it takes a transaction.
 import { keccakAsHex } from '@polkadot/util-crypto';
 import { checksummed } from './address.ts';
-import { untrusted } from './format.ts';
+import { toHex, untrusted, weiAmount } from './format.ts';
+import type { Network } from './networks.ts';
 
 export interface Revert {
   kind: 'empty' | 'message' | 'panic' | 'custom';
@@ -150,4 +152,222 @@ export function describeReturn(data: string | null | undefined): string {
     return `one 32-byte word. As a number: ${n}${n <= 1n ? ` (as a bool: ${n === 1n})` : ''}${asAddress}`;
   }
   return `${bytes} bytes${bytes % 32 === 0 ? ` (${bytes / 32} words of 32 bytes; decode them with the function's ABI)` : ''}`;
+}
+
+/* ---------- a signed raw transaction ---------- */
+
+interface RlpPart {
+  list: boolean;
+  data: Uint8Array;
+}
+
+/** Where the RLP item at `at` starts and ends. Null when the bytes are not well formed. */
+function rlpHead(b: Uint8Array, at: number): { list: boolean; start: number; end: number } | null {
+  if (at >= b.length) return null;
+  const p = b[at];
+  if (p < 0x80) return { list: false, start: at, end: at + 1 };
+  const short = p <= 0xb7 || (p >= 0xc0 && p <= 0xf7);
+  const list = p >= 0xc0;
+  let start: number;
+  let length: number;
+  if (short) {
+    start = at + 1;
+    length = p - (list ? 0xc0 : 0x80);
+  } else {
+    const ll = p - (list ? 0xf7 : 0xb7);
+    // A length of more than 4 bytes would be 4 GB or more: no transaction is that long.
+    if (ll > 4 || at + 1 + ll > b.length) return null;
+    length = 0;
+    for (let i = 0; i < ll; i++) length = length * 256 + b[at + 1 + i];
+    start = at + 1 + ll;
+  }
+  const end = start + length;
+  return end <= b.length ? { list, start, end } : null;
+}
+
+/** The items of the RLP list that is exactly these bytes, one level deep. Null when it is not one. */
+function rlpItems(b: Uint8Array): RlpPart[] | null {
+  const head = rlpHead(b, 0);
+  if (!head || !head.list || head.end !== b.length) return null;
+  const items: RlpPart[] = [];
+  for (let at = head.start; at < head.end; ) {
+    const h = rlpHead(b, at);
+    if (!h || h.end > head.end) return null;
+    items.push({ list: h.list, data: b.subarray(h.start, h.end) });
+    at = h.end;
+  }
+  return items;
+}
+
+export interface RawEthTx {
+  /** 0 legacy, 1 EIP-2930, 2 EIP-1559, 3 blob, 4 set-code. */
+  type: number;
+  /** Null for a legacy transaction signed without a chain id. */
+  chainId: bigint | null;
+  nonce: bigint;
+  gasLimit: bigint;
+  /** A 0x address in lower case, or null for a contract creation. */
+  to: string | null;
+  value: bigint;
+  /** Legacy and EIP-2930 transactions. */
+  gasPrice: bigint | null;
+  /** EIP-1559 and later. */
+  maxFeePerGas: bigint | null;
+  maxPriorityFeePerGas: bigint | null;
+  data: string;
+}
+
+/**
+ * The fields of a signed Ethereum transaction (the bytes eth_sendRawTransaction takes, which a
+ * Revive.ethTransact extrinsic carries as its payload). Null when the bytes are not one of the five
+ * known types. The signature is not checked and the sender is not recovered.
+ */
+export function decodeEthRaw(raw: Uint8Array): RawEthTx | null {
+  if (!raw.length) return null;
+  const typed = raw[0] <= 0x7f;
+  const type = typed ? raw[0] : 0;
+  const parts = rlpItems(typed ? raw.subarray(1) : raw);
+  if (!parts) return null;
+  const num = (p: RlpPart | undefined): bigint | null => (p && !p.list && p.data.length <= 32 && (p.data.length === 0 || p.data[0] !== 0) ? (p.data.length ? BigInt(toHex(p.data)) : 0n) : null);
+  const bytes = (p: RlpPart | undefined): Uint8Array | null => (p && !p.list ? p.data : null);
+  let f: Array<RlpPart | undefined>;
+  let chainId: bigint | null;
+  let gasPrice: bigint | null = null;
+  let maxFeePerGas: bigint | null = null;
+  let maxPriorityFeePerGas: bigint | null = null;
+  if (type === 0) {
+    // [nonce, gasPrice, gas, to, value, data, v, r, s]; EIP-155 puts the chain id in v.
+    if (parts.length !== 9) return null;
+    f = [undefined, parts[0], parts[2], parts[3], parts[4], parts[5]];
+    gasPrice = num(parts[1]);
+    const v = num(parts[6]);
+    if (v === null || gasPrice === null) return null;
+    chainId = v >= 35n ? (v - 35n) / 2n : null;
+  } else if (type === 1) {
+    // [chainId, nonce, gasPrice, gas, to, value, data, accessList, y, r, s]
+    if (parts.length !== 11) return null;
+    f = [parts[0], parts[1], parts[3], parts[4], parts[5], parts[6]];
+    gasPrice = num(parts[2]);
+    if (gasPrice === null) return null;
+    chainId = num(parts[0]);
+  } else if (type === 2 || type === 3 || type === 4) {
+    // [chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gas, to, value, data, accessList, ...]
+    if (parts.length < 12) return null;
+    f = [parts[0], parts[1], parts[4], parts[5], parts[6], parts[7]];
+    maxPriorityFeePerGas = num(parts[2]);
+    maxFeePerGas = num(parts[3]);
+    if (maxFeePerGas === null || maxPriorityFeePerGas === null) return null;
+    chainId = num(parts[0]);
+  } else return null;
+  const nonce = num(f[1]);
+  const gasLimit = num(f[2]);
+  const toBytes = bytes(f[3]);
+  const value = num(f[4]);
+  const data = bytes(f[5]);
+  if (nonce === null || gasLimit === null || toBytes === null || value === null || data === null) return null;
+  if (toBytes.length !== 0 && toBytes.length !== 20) return null;
+  if (type !== 0 && chainId === null) return null;
+  return { type, chainId, nonce, gasLimit, to: toBytes.length ? toHex(toBytes) : null, value, gasPrice, maxFeePerGas, maxPriorityFeePerGas, data: toHex(data) };
+}
+
+/* ---------- what the node does with an Ethereum transaction ---------- */
+
+// Measured by real sends of value transfers on the testnet, Nov 15, 2026 (blocks 477789 to 478132):
+// - the node takes a transaction when gas limit x BASE fee is at most what the sender can spend
+//   (eth_getBalance). The max fee, a legacy gas price, the priority fee and the value are not counted.
+//   The nearest real sends: 1.7 percent below the balance was taken (block 477940) and 2.4 percent
+//   above it was refused; nearer was not tried.
+// - at the start of its block the chain withdraws gas limit x base fee, and the value must come from
+//   what is left. A value that does not fit does not stop the transaction: it is included, it fails
+//   (receipt status 0x0) and the fee is charged.
+// - the charge is gas used x base fee. The priority fee and a gas price above the base fee are never
+//   charged; unused gas is not charged either.
+// - a gas limit below what the transaction uses and a max fee below the base fee are refused with
+//   the same bare 1010. The runtime's own check calls every one of these refusals "Payment".
+
+export type Outcome = 'ok' | 'fails' | 'refused';
+
+export interface Acceptance {
+  /** ok: taken and should succeed; fails: taken, then fails in its block and costs the fee; refused: error 1010. */
+  outcome: Outcome;
+  /** gas limit x base fee: what the sender must be able to spend for the node to take the transaction. */
+  toBeTaken: bigint;
+  /** toBeTaken + value: what it needs to succeed too. */
+  toSucceed: bigint;
+  /** What is missing to be taken; 0 when it is taken. */
+  shortToTake: bigint;
+  /** What is missing to succeed; 0 when it succeeds. */
+  shortToSucceed: bigint;
+  /** What is left after toSucceed; 0 when it does not succeed. */
+  spare: bigint;
+  /** The largest value with which it still succeeds (balance - toBeTaken), or null when it is refused. */
+  maxValue: bigint | null;
+  /** gas limit x max fee when a max fee above the base fee is given, else toBeTaken: what the block takes before the value if the base fee rises up to the max fee. */
+  withRise: bigint;
+  /** The largest value that still fits if the base fee rises up to the max fee (balance - withRise, at least 0), or null when it is refused. */
+  safeValue: bigint | null;
+  /** What to send first so that the balance covers withRise + the value; 0 when it already does. */
+  safeFund: bigint;
+  /** The gas limit these figures were computed with. */
+  gasLimit: bigint;
+  /** True when toBeTaken is between 1.7 percent below and 2.4 percent above the balance, nearer than we measured. */
+  nearLine: boolean;
+}
+
+/**
+ * The node's balance rule (see above) applied to one transaction. All amounts in wei. The max fee, when
+ * given, decides only the advice: the base fee can rise before the block, up to the max fee.
+ */
+export function acceptanceOf(p: { gasLimit: bigint; baseFee: bigint; value: bigint; balance: bigint; maxFee?: bigint }): Acceptance {
+  const toBeTaken = p.gasLimit * p.baseFee;
+  const toSucceed = toBeTaken + p.value;
+  const nearLine = toBeTaken * 10000n > p.balance * 9832n && toBeTaken * 10000n < p.balance * 10236n;
+  const shortToTake = toBeTaken > p.balance ? toBeTaken - p.balance : 0n;
+  const shortToSucceed = toSucceed > p.balance ? toSucceed - p.balance : 0n;
+  const outcome: Outcome = shortToTake > 0n ? 'refused' : shortToSucceed > 0n ? 'fails' : 'ok';
+  const withRise = p.maxFee !== undefined && p.maxFee > p.baseFee ? p.gasLimit * p.maxFee : toBeTaken;
+  const safeValue = outcome === 'refused' ? null : p.balance > withRise ? p.balance - withRise : 0n;
+  const safeFund = withRise + p.value > p.balance ? withRise + p.value - p.balance : 0n;
+  return { outcome, toBeTaken, toSucceed, shortToTake, shortToSucceed, spare: outcome === 'ok' ? p.balance - toSucceed : 0n, maxValue: outcome === 'refused' ? null : p.balance - toBeTaken, withRise, safeValue, safeFund, gasLimit: p.gasLimit, nearLine };
+}
+
+/** The verdict in one paragraph: the outcome, the numbers that decide it, and what to change. */
+export function verdictText(a: Acceptance, network: Network, fundTarget: string): string {
+  const w = (v: bigint): string => weiAmount(v, network);
+  const near = a.nearLine
+    ? ' Close to the line: gas limit x base fee is within 1.7 percent below to 2.4 percent above the balance. Real sends of Nov 15, 2026 were taken at 1.7 percent below (testnet block 477940) and refused at 2.4 percent above, not nearer, so keep a margin.'
+    : '';
+  // With a max fee the advice leaves room for the base fee to rise before the block, up to the max fee.
+  const rise = a.withRise > a.toBeTaken;
+  if (a.outcome === 'ok') {
+    // A value that fits only at this base fee: a rise before the block makes the transaction fail and cost the fee.
+    const thin =
+      rise && a.toSucceed > a.toBeTaken && a.safeFund > 0n
+        ? ` But a rise of the base fee up to the max fee would take more than that: if the base fee rises by more than ${a.spare / a.gasLimit} wei per gas before the block, the value no longer fits, and the transaction fails and costs the fee. To keep that room, ${a.safeValue ? `lower the value to at most ${w(a.safeValue)}, or ` : ''}send at least ${weiAmount(a.safeFund, network, false)} more to ${fundTarget} first.`
+        : '';
+    return `TAKEN, and it should succeed: the balance covers gas limit x base fee plus the value, with ${weiAmount(a.spare, network, false)} to spare.${thin}${near}`;
+  }
+  if (a.outcome === 'fails') {
+    const fund = `send at least ${weiAmount(a.safeFund, network, false)} more to ${fundTarget} first`;
+    return (
+      `TAKEN, but it will FAIL in its block and cost the fee: the balance covers gas limit x base fee but not the value on top of it, short by ${w(a.shortToSucceed)}. ` +
+      'The node does not count the value before the block, so it takes the transaction; in the block the value cannot be paid, the receipt shows status 0x0, and the fee is charged all the same (measured on Nov 15, 2026 with real sends: testnet blocks 477900 and 477940). ' +
+      (a.safeValue
+        ? `Lower the value to at most ${w(a.safeValue)}${rise ? ', the balance less gas limit x max fee, so that it still fits if the base fee rises up to the max fee before the block;' : ' at this base fee,'} or ${fund}.`
+        : `${fund[0].toUpperCase()}${fund.slice(1)}${rise ? ' (that leaves room for the base fee to rise up to the max fee before the block)' : ''}.`) +
+      near
+    );
+  }
+  // eth_getBalance leaves out the existential deposit, so an account that holds nothing yet needs it on top.
+  const empty = a.shortToTake === a.toBeTaken ? ` The balance is 0: if the account holds less than the 0.1 ${network.token} existential deposit (or does not exist yet), send that 0.1 ${network.token} on top.` : '';
+  const withValue = a.toSucceed > a.toBeTaken;
+  const covers = rise
+    ? ` (that covers ${withValue ? 'the value too, and ' : ''}a rise of the base fee up to the max fee before the block)`
+    : withValue
+      ? ' (that covers the value too)'
+      : '';
+  return (
+    `REFUSED with error 1010: expect {"code":1010,"message":"Invalid Transaction"}, which gives no reason (the node's own check calls it Payment), because gas limit x base fee is more than the balance, short by ${w(a.shortToTake)}. ` +
+    `Nothing is charged and the nonce stays free. Send at least ${weiAmount(a.safeFund, network, false)} to ${fundTarget} first${covers}.${empty} A higher gas limit only raises what the sender must hold.${near}`
+  );
 }

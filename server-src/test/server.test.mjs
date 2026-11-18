@@ -1,7 +1,13 @@
 // End-to-end check of the BUILT server (the single file inside the plugin), over stdio, the way an
-// MCP client talks to it. It lists the tools and calls each one against the live chain.
+// MCP client talks to it. It lists the tools and calls each one against the live chain, then lists
+// the resources and the prompts and reads one of each.
 //
-// Usage: node test/server.test.mjs [--era=legacy|auto] [--server=<path>]
+// test/server-cases.json holds "tools" (the exact tool list), "calls", and optionally "prompts" (the
+// exact prompt list) and "resource" (the address of the resource to read; portaldot://guide/errors
+// when it is left out).
+//
+// Usage: node test/server.test.mjs [--era=legacy|auto] [--server=<path>] [--cases=<path>]
+// --cases reads another file of the same form, for example to run only the calls that need no network.
 // Exit code 0 when every check passes.
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
@@ -12,7 +18,7 @@ const argv = process.argv.slice(2);
 const opt = (name) => argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const serverPath = resolve(opt('server') ?? '../plugins/portaldot-dev/server/index.mjs');
 const era = opt('era') ?? 'legacy';
-const cases = JSON.parse(readFileSync(new URL('./server-cases.json', import.meta.url), 'utf8'));
+const cases = JSON.parse(readFileSync(opt('cases') ? resolve(opt('cases')) : new URL('./server-cases.json', import.meta.url), 'utf8'));
 
 let failed = 0;
 const check = (ok, label, detail = '') => {
@@ -43,8 +49,47 @@ for (const t of tools) {
   for (const [key, prop] of Object.entries(t.inputSchema?.properties ?? {})) if (!prop.description) problems.push(`field "${key}" has no description`);
   check(problems.length === 0, `${t.name}: description, read-only marks and field descriptions`, problems.join('; '));
 }
-// every tool the instructions mention must exist
-for (const word of instructions.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) check(names.includes(word), `instructions mention ${word}, which exists`);
+// the resources: one per knowledge file, each with a title, one line on what it holds, and Markdown
+const caps = client.getServerCapabilities() ?? {};
+check(Boolean(caps.resources) && !caps.resources.subscribe && caps.resources.listChanged === false, 'resources are declared, without subscriptions, as a list that does not change', JSON.stringify(caps.resources));
+const { resources } = await client.listResources();
+const badResources = resources.filter((r) => !r.uri.startsWith('portaldot://guide/') || !r.title || !r.description || /\n/.test(r.description) || r.mimeType !== 'text/markdown' || !(r.size > 0));
+check(resources.length >= 1 && badResources.length === 0, `${resources.length} resources at portaldot://guide/<name>, each with a title, a one-line description, text/markdown and a size`, badResources.map((r) => r.uri).join(', '));
+const resourceUri = cases.resource ?? 'portaldot://guide/errors';
+try {
+  const read = await client.readResource({ uri: resourceUri });
+  const c = read.contents?.[0] ?? {};
+  const listed = resources.find((r) => r.uri === resourceUri);
+  check(read.contents?.length === 1 && c.uri === resourceUri && c.mimeType === 'text/markdown' && /^#{1,3} \S/m.test(c.text ?? '') && Buffer.byteLength(c.text ?? '', 'utf8') === listed?.size,
+    `reading ${resourceUri} gives its Markdown (${(c.text ?? '').length} chars), as large as listed`, JSON.stringify(read).slice(0, 300));
+} catch (err) {
+  check(false, `reading ${resourceUri}`, err.message);
+}
+
+// the prompts: exactly the ones the cases name (none when they name none); each one is read
+const { prompts } = caps.prompts ? await client.listPrompts() : { prompts: [] };
+const promptNames = prompts.map((p) => p.name);
+const wantPrompts = cases.prompts ?? [];
+check(JSON.stringify([...promptNames].sort()) === JSON.stringify([...wantPrompts].sort()), `the prompt list is exactly the expected ${wantPrompts.length}${wantPrompts.length ? ` (${wantPrompts.join(', ')})` : ''}`, `got: ${promptNames.join(', ') || 'none'}`);
+check(Boolean(caps.prompts) === prompts.length > 0, prompts.length ? 'prompts are declared' : 'no prompts capability without a prompt', JSON.stringify(caps.prompts));
+for (const p of prompts) {
+  const args = Object.fromEntries((p.arguments ?? []).map((a) => [a.name, `a test value for ${a.name}`]));
+  try {
+    const got = await client.getPrompt({ name: p.name, arguments: args });
+    const text = (got.messages ?? []).map((m) => m.content?.text ?? '').join('\n');
+    const problems = [];
+    if (!p.title || !p.description) problems.push('no title or description');
+    if (got.messages?.length !== 1 || got.messages[0].role !== 'user') problems.push('not one user message');
+    if (text.length < 40) problems.push('almost no text');
+    for (const v of Object.values(args)) if (!text.includes(v)) problems.push(`the argument "${v}" is not in the text`);
+    check(problems.length === 0, `prompt ${p.name} ("${p.title}"): ${text.length} chars, arguments ${(p.arguments ?? []).map((a) => `${a.name}${a.required ? '' : ' (optional)'}`).join(', ') || 'none'}`, problems.join('; '));
+  } catch (err) {
+    check(false, `prompt ${p.name}`, err.message);
+  }
+}
+
+// every tool or prompt the instructions mention must exist
+for (const word of instructions.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []) check(names.includes(word) || promptNames.includes(word), `instructions mention ${word}, which exists`);
 
 for (const c of cases.calls) {
   const started = performance.now();

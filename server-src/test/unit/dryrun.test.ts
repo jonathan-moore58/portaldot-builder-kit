@@ -114,14 +114,17 @@ test('the limits to pass: weight + 10%, deposit = the larger of net and maximum 
   assert.equal(depositText(-384150000000000n, testnet), 'a refund of 3.8415 tPOT (384150000000000 base units)');
 });
 
-test('CREATE: vectors computed by the V3 chain itself (two dry runs and three Ethereum deployments)', () => {
-  // dry runs of Nov 14, 2026: the Treasury's 0x form at nonce 0, and an account at nonce 8151 (a two-byte RLP nonce)
+test('CREATE: one vector computed by the V3 chain itself, and placeholder senders', () => {
+  // dry run of Nov 14, 2026: the Treasury's 0x form at nonce 0
   assert.equal(createAddress('0x8ddee436166f311ddeed36d714b08f512670d16e', 0n), '0x30ca0ab4156e37027841a1504e78aae6116468db');
-  assert.equal(createAddress('0x3bf5c340884892c742b2964bd65bd85de3885bc8', 8151n), '0xab95fc48ff682fe6fcab49e742f9cf045c182b0a');
-  // receipts of Ethereum creation transactions on the testnet (contractAddress), sender and transaction nonce
-  assert.equal(createAddress('0xf3a73e7fa1b01f0f77970fa81e922bac589b64a4', 0n), '0x93ca24a53ec91488ff7841ac9a00cc0ce7ac82fa');
-  assert.equal(createAddress('0x9fc79e370c3c37de07b42513e13e7f1d4db8d223', 3n), '0xd9f1fb1d6f634696763a345890f32c50603b653a');
-  assert.equal(createAddress('0x421d297a9d9ba5112ede43e96f83a54c4e4aafdb', 16n), '0x5199051d8c1f390f32ec4be50cfb50ea6f8f59cb');
+  // placeholder senders; nonces 0 (empty), 3, 16 and 127 (one byte), 128 (one byte with a length prefix), 8151 (two bytes):
+  // keccak-256(rlp([sender, nonce]))[12:], computed with a separate RLP encoder
+  assert.equal(createAddress('0x1111111111111111111111111111111111111111', 0n), '0x8f7a45ebde059392e46a46dcc14ab24681a961ea');
+  assert.equal(createAddress('0x1111111111111111111111111111111111111111', 3n), '0xb35b8b030a4bc592ea8ccf3684512ce083f108dc');
+  assert.equal(createAddress('0x2222222222222222222222222222222222222222', 16n), '0x7b9e603c310f7f799af993681ab7a60bb683e6c3');
+  assert.equal(createAddress('0x2222222222222222222222222222222222222222', 127n), '0x94d8faba855284d49ef42fafe3357f57a8dedf87');
+  assert.equal(createAddress('0x2222222222222222222222222222222222222222', 128n), '0xed50a8106e29e03ec86c56c7ad1ae5dd8e51bb9c');
+  assert.equal(createAddress('0x2222222222222222222222222222222222222222', 8151n), '0x89d91783fbcddc1a10b878f2ef7f5da284b1a625');
 });
 
 test('CREATE: one-byte and two-byte RLP nonces (127, 128, 255, 256, 8151) give distinct 20-byte addresses', () => {
